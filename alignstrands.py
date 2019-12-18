@@ -305,7 +305,7 @@ def adjust(the_motif, score):
     genus = fg.genus
     bound = len(fg.boundaries)
     try:
-        score += (math.log1p(bg_mat[genus, bound]) / math.log(466)) * FACTOR
+        score = score * bg_mat[genus, bound] / np.amax(bg_mat)
     except IndexError:
         pass
     return score

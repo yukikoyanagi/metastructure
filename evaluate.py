@@ -4,19 +4,23 @@ import argparse, pickle, pathlib
 from itertools import combinations
 from math import sqrt
 
-def compare(tmot, pmot):
-    with open(tmot, 'rb') as fh:
-        thetmot = pickle.load(fh)
-
+def stdmotif(mot):
     # Motif produced by asfatgraph.py is slightly different format
     # than motif from alignstrands.py. 
     tmot = set()
-    for link in thetmot:
+    for link in mot:
         pair, ori = link
         if pair[0] < pair[1]:
             tmot.add(((pair[0], pair[1]), not ori[0]==ori[1]))
         else:
             tmot.add(((pair[1], pair[0]), not ori[0]==ori[1]))
+    return tmot
+
+def compare(tmot, pmot):
+    with open(tmot, 'rb') as fh:
+        thetmot = pickle.load(fh)
+
+    tmot = stdmotif(thetmot)
         
     with open(pmot, 'rb') as fh:
         pmot = pickle.load(fh)
