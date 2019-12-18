@@ -1,0 +1,6 @@
+.idea
+.cache
+*.pyc
+*.tar*
+__pycache__
+*~
