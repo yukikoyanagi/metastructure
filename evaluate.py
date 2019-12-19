@@ -61,7 +61,7 @@ def main(t_dir, p_dir):
                 'Missing motif file: {}'.format(pf.name))
 
 
-    specificity = theTP / (theTP + theFP)
+    specificity = theTN / (theTN + theFP)
     sensitivity = theTP / (theTP + theFN)
     correlation = (theTP*theTN - theFP*theFN) / \
                   sqrt((theTP+theFN)*(theTP+theFP)*(theTN+theFN)*(theTN+theFP))
