@@ -10,9 +10,9 @@ ACC_COL = 11
 GAP_SCORE = -4
 N_ALIGNED = None #choose all matches
 MAX_ORDER = 10 # Consider up to n'th score for each strand pair
-CUTOFF_VALUES = [k * 0.05 for k in range(6)]
+CUTOFF_VALUES = [k * 0.1 for k in range(6)]
 BG_MAT_FILE = 'genbound_arr.pkl'
-FACTOR = 1
+FACTOR = 8
 
 import argparse, pathlib, re, os, pickle, math
 import numpy as np
@@ -310,7 +310,30 @@ def adjust(the_motif, score):
         pass
     return score
     
+def assign(pids, tid, tcount, sd):
+    "Assign pid's to current task, such that tasks have roughly "
+    "equal load (sum of square of # of strands)"
+    sd = pathlib.Path(sd)
+    ps = []
+    for pid in pids:
+        fn = sd / 'summary{}.txt'.format(pid.upper())
+        dseq = dsspseq(fn)
+        n = 0
+        for k, g in groupby(dseq):
+            if k == 'S':
+                n += 1
+        ps.append((pid, n))
+    res = [[] for i in range(tcount)] 
+    total = [0 for i in range(tcount)]
 
+    ps = sorted(ps, key=itemgetter(1), reverse=True)
+    while ps:
+        p = ps.pop(0)
+        idx = total.index(min(total))
+        res[idx].append(p[0])
+        total[idx] += p[1]**2
+    return sorted(res[tid], reverse=True)
+    
 def align(pid, sd, bd, lf, of, mo, debug):
     if debug:
         print('Processing {}.....'.format(pid))
@@ -425,8 +448,8 @@ def main(pid, sd, bd, lf, of, sl, mo, debug):
         tcount = int(os.environ['SLURM_NTASKS'])
         tid = int(os.environ['SLURM_PROCID'])
         with open(pid) as fh:
-            plst = islice([line.rstrip('\n') for line in fh],
-                          tid, None, tcount)
+            pids = [line.rstrip('\n') for line in fh]
+        plst = assign(pids, tid, tcount, sd)
         for pid in plst:
             align(pid, sd, bd, lf, of, mo, debug)
     else:
