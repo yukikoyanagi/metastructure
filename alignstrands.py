@@ -8,9 +8,9 @@ DON_COL = 10
 ACC_COL = 11
 
 GAP_SCORE = -4
-N_ALIGNED = None #choose all matches
+N_ALIGNED = 1000 #choose all matches
 MAX_ORDER = 10 # Consider up to n'th score for each strand pair
-CUTOFF_VALUES = [k * 0.1 for k in range(6)]
+CUTOFF_VALUES = [k * 0.05 for k in range(6)]
 BG_MAT_FILE = 'genbound_arr.pkl'
 FACTOR = 8
 
@@ -19,10 +19,19 @@ import numpy as np
 from collections import Counter
 from itertools import filterfalse, combinations, product, chain, islice, groupby
 from operator import itemgetter, mul, xor, not_
+from functools import reduce
 
 import alignment.substmatrices as substmatrices
 import alignment.alignmenthelper as alignmenthelper
 import fatgraph.fatgraph as fatgraph
+
+class NoValidMotifError(Exception):
+    def __init__(self, pid):
+        self.args = ('Cannot generate valid structure for {}. '
+                     'Consider raising N_ALIGNED value.'.format(pid))
+
+def prod(iterable):
+    return reduce(mul, iterable, 1)
 
 def readrawseq(fname, col):
     '''
@@ -148,6 +157,11 @@ def makemotif(p_mat, o_mat):
         if isvalid(motif | {(idx, o_mat[idx])}):
             motif.add((idx, o_mat[idx]))
         w_mat[idx] = 0
+
+    #Check motif is valid
+    strands = set([i for p, o in motif for i in p])
+    if len(strands) < len(p_mat):
+        raise ValueError('Cannot construct valid motif')
     return motif
 
 def follow(links, start):
@@ -278,6 +292,9 @@ def makematrices(strands, scores, n, m):
         if s[3]:
             o_mat[i, j] = 1
 
+    if hasunpaird(c_mat):
+        raise ValueError('Cannot make structure without unpaired strand.')
+    
     # Apply cutoff, but do not leave unpaired strand
     entries = []
     for i, j in combinations(range(len(strands)), 2):
@@ -294,6 +311,7 @@ def makematrices(strands, scores, n, m):
                 continue
             else:
                 c_mat[row, col] = 0
+
     return c_mat, o_mat
 
 def adjust(the_motif, score):
@@ -333,8 +351,34 @@ def assign(pids, tid, tcount, sd):
         res[idx].append(p[0])
         total[idx] += p[1]**2
     return sorted(res[tid], reverse=True)
-    
-def align(pid, sd, bd, lf, of, mo, debug):
+
+def compare(tmot, pmot):
+    thetmot = tmot
+
+    # Motif produced by asfatgraph.py is slightly different format
+    # than motif from alignstrands.py. 
+    tmot = set()
+    for link in thetmot:
+        pair, ori = link
+        if pair[0] < pair[1]:
+            tmot.add(((pair[0], pair[1]), not ori[0]==ori[1]))
+        else:
+            tmot.add(((pair[1], pair[0]), not ori[0]==ori[1]))
+        
+    tpairs = {t[0] for t in tmot}
+    ppairs = {p[0] for p in pmot}
+    apairs = set(combinations(sorted(set(s for p in tpairs for s in p)),2))
+    TP = len(tpairs & ppairs)
+    FP = len(ppairs - tpairs)
+    TN = len((apairs - tpairs) & (apairs - ppairs))
+    FN = len(tpairs - ppairs)
+
+    c_pairs = set(p for p in pmot if p[0] in tpairs)
+    c_links = set(p for p in pmot if p in tmot)
+
+    return TP, FP, TN, FN, len(c_pairs), len(c_links)
+
+def align(pid, sd, bd, lf, md, of, mo, debug):
     if debug:
         print('Processing {}.....'.format(pid))
     # Load learning data. llst is a list of unique sequences.
@@ -379,7 +423,8 @@ def align(pid, sd, bd, lf, of, mo, debug):
             thisscore = ah.alignStrict(
                 this.replace('!', '*'), l.replace('!', '*'),
                 substMatrix=mat, gapScore=GAP_SCORE, btrace=False)
-            scores.append((l, thisscore/maxscore))
+            if thisscore > 0:
+                scores.append((l, thisscore/maxscore))
 
         scores = sorted(scores, key=itemgetter(1), reverse=True)
         if debug:
@@ -394,8 +439,8 @@ def align(pid, sd, bd, lf, of, mo, debug):
     for i, j in combinations(strands, 2):
         seq_i = rseq[i[0]: i[1]+1]
         seq_j = rseq[j[0]: j[1]+1]
-        top_i = [s for s in all_scores[seq_i][:N_ALIGNED] if s[-1]>0]
-        top_j = [s for s in all_scores[seq_j][:N_ALIGNED] if s[-1]>0]
+        top_i = all_scores[seq_i][:N_ALIGNED]
+        top_j = all_scores[seq_j][:N_ALIGNED]
         for s, t in product(top_i, top_j):
             key = frozenset([s[0],t[0]])
             if key in learnkeys:
@@ -406,20 +451,45 @@ def align(pid, sd, bd, lf, of, mo, debug):
 
     motifs = []
     for n, m in product(range(MAX_ORDER), CUTOFF_VALUES):
-        c_mat, o_mat = makematrices(strands, c_scores, n, m)
-        motif = makemotif(c_mat, o_mat)
+        try:
+            c_mat, o_mat = makematrices(strands, c_scores, n, m)
+        except ValueError:
+            continue
+        try:
+            motif = makemotif(c_mat, o_mat)
+        except ValueError:
+            continue
         s_score = sum([c_mat[p[0]] for p in motif])
         motifs.append((motif, s_score))
+
+    if not motifs:
+        raise NoValidMotifError(pid)
 
     if debug:
         print('Candidate motifs generated.')
         print(motifs)
 
-    a_motifs = [(mot, adjust(mot, score)) for mot, score in motifs]
-    if debug:
-        print('Motif scores computd.')
-        print(a_motifs)
-    motif = max(a_motifs, key=itemgetter(1))[0]
+    if md:
+        md = pathlib.Path(md)
+        with open(md / '{}.pkl'.format(pid), 'rb') as fh:
+            tmot = pickle.load(fh)
+        thescore = 0
+        themot = None
+        for mot, _ in motifs:
+            TP, FP, TN, FN, NP, NL = compare(tmot, mot)
+            denom = math.sqrt((TP+FP)*(TP+FN)*(TN+FP)*(TN+FN))
+            if denom == 0:
+                denom = 1
+            score = (TP*TN - FP*FN) / denom
+            if score > thescore:
+                themot = mot
+        motif = themot
+    else:
+        a_motifs = [(mot, adjust(mot, score)) for mot, score in motifs]
+        if debug:
+            print('Motif scores computed.')
+            print(a_motifs)
+        motif = max(a_motifs, key=itemgetter(1))[0]
             
     if mo and of:
         of = of.rstrip('/')
@@ -443,7 +513,7 @@ def align(pid, sd, bd, lf, of, mo, debug):
         print('{}:edges={}'.format(pid, es))
         print('{}:in_edges={}'.format(pid, ies))
 
-def main(pid, sd, bd, lf, of, sl, mo, debug):
+def main(pid, sd, bd, lf, md, of, sl, mo, debug):
     if sl:
         tcount = int(os.environ['SLURM_NTASKS'])
         tid = int(os.environ['SLURM_PROCID'])
@@ -451,9 +521,16 @@ def main(pid, sd, bd, lf, of, sl, mo, debug):
             pids = [line.rstrip('\n') for line in fh]
         plst = assign(pids, tid, tcount, sd)
         for pid in plst:
-            align(pid, sd, bd, lf, of, mo, debug)
+            if not (pathlib.Path(of) / '{}.pkl'.format(pid)).exists():
+                try:
+                    align(pid, sd, bd, lf, md, of, mo, debug)
+                except NoValidMotifError as e:
+                    print(e)
     else:
-        align(pid, sd, bd, lf, of, mo, debug)
+        try:
+            align(pid, sd, bd, lf, md, of, mo, debug)
+        except NoValidMotifError as e:
+            print(e)
 
 
 if __name__=='__main__':
@@ -468,6 +545,10 @@ if __name__=='__main__':
                         help='Directory containing hbond files.')
     parser.add_argument('learningf',
                         help='File with beta-strand connections.')
+    parser.add_argument('-c', '--compare',
+                        help='Compare with the true motifs stored '
+                        'in the specified directory and choose the '
+                        'closest candidate motif.')
     parser.add_argument('-o', '--output',
                         help='Output directory.')
     parser.add_argument('-s', '--slurm', action='store_true',
@@ -478,4 +559,5 @@ if __name__=='__main__':
                         help='Display debug messages.')
     args = parser.parse_args()
     main(args.pid, args.seqdir, args.bonddir, args.learningf,
-         args.output, args.slurm, args.motif, args.debug)
+         args.compare, args.output, args.slurm, args.motif,
+         args.debug)
