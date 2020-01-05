@@ -4,7 +4,7 @@ import argparse, pickle, pathlib
 from itertools import combinations
 from math import sqrt
 
-def compare(tmot, pmot):
+def compare(tmot, pmot, seq):
     with open(tmot, 'rb') as fh:
         thetmot = pickle.load(fh)
 
@@ -23,6 +23,9 @@ def compare(tmot, pmot):
 
     tpairs = {t[0] for t in tmot}
     ppairs = {p[0] for p in pmot}
+    if seq:
+        tpairs = {p for p in tpairs if p[1]-p[0]==1}
+        ppairs = {p for p in ppairs if p[1]-p[0]==1}
     apairs = set(combinations(sorted(set(s for p in tpairs for s in p)),2))
     TP = len(tpairs & ppairs)
     FP = len(ppairs - tpairs)
@@ -34,7 +37,7 @@ def compare(tmot, pmot):
 
     return TP, FP, TN, FN, len(c_pairs), len(c_links)
 
-def main(t_dir, p_dir):
+def main(t_dir, p_dir, seq):
     tdir = pathlib.Path(t_dir)
     pdir = pathlib.Path(p_dir)
     tfs = tdir.glob('*.pkl')
@@ -48,7 +51,7 @@ def main(t_dir, p_dir):
     for pf in pfs:
         for tf in tfs:
             if pf.name.upper() == tf.name.upper():
-                TP, FP, TN, FN, CP, CL = compare(tf, pf)
+                TP, FP, TN, FN, CP, CL = compare(tf, pf, seq)
                 theTP += TP
                 theFP += FP
                 theTN += TN
@@ -65,10 +68,12 @@ def main(t_dir, p_dir):
     sensitivity = theTP / (theTP + theFN)
     correlation = (theTP*theTN - theFP*theFN) / \
                   sqrt((theTP+theFN)*(theTP+theFP)*(theTN+theFN)*(theTN+theFP))
+    accuracy = (theTP + theTN) / (theTP + theTN + theFP + theFN)
 
     print('Specificity: {:.2%}'.format(specificity))
     print('Sensitivity: {:.2%}'.format(sensitivity))
     print('Correlation: {:.4f}'.format(correlation))
+    print('Accuracy: {:.2%}'.format(accuracy))
     print('Correct orientation (for correctly identified pairs): '
           '{:.2%}'.format(theCL/theCP))
 
@@ -83,5 +88,7 @@ if __name__ == "__main__":
     parser.add_argument('pred_motif_dir',
                         help='Directory containing pickle files '
                         'of  predicted motif.')
+    parser.add_argument('-s', '--sequential', action='store_true',
+                        help='Only consider pairing of sequential strands.')
     args = parser.parse_args()
-    main(args.true_motif_dir, args.pred_motif_dir)
+    main(args.true_motif_dir, args.pred_motif_dir, args.sequential)

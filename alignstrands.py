@@ -8,13 +8,14 @@ DON_COL = 10
 ACC_COL = 11
 
 GAP_SCORE = -4
-N_ALIGNED = 1000 #choose all matches
-MAX_ORDER = 10 # Consider up to n'th score for each strand pair
-CUTOFF_VALUES = [k * 0.05 for k in range(6)]
+N_ALIGNED = 10 #choose all matches
+MAX_ORDER = 1 # Consider up to n'th score for each strand pair
+CUTOFF_VALUES = [0.1,]
+#CUTOFF_VALUES = [k * 0.05 for k in range(6)]
 BG_MAT_FILE = 'genbound_arr.pkl'
-FACTOR = 8
+FACTOR = 4
 
-import argparse, pathlib, re, os, pickle, math
+import argparse, pathlib, re, os, pickle, math, logging
 import numpy as np
 from collections import Counter
 from itertools import filterfalse, combinations, product, chain, islice, groupby
@@ -26,9 +27,7 @@ import alignment.alignmenthelper as alignmenthelper
 import fatgraph.fatgraph as fatgraph
 
 class NoValidMotifError(Exception):
-    def __init__(self, pid):
-        self.args = ('Cannot generate valid structure for {}. '
-                     'Consider raising N_ALIGNED value.'.format(pid))
+    pass
 
 def prod(iterable):
     return reduce(mul, iterable, 1)
@@ -102,6 +101,33 @@ def loadlearning(lf):
             lst.append((frozenset(cols[:2]), o))
     return Counter(lst)
 
+def loadsegfile(sf):
+    def istrue(s):
+        if s.split(':')[1] == 'True':
+            return True
+        else:
+            return False
+
+    sd = {}
+    with open(sf) as fh:
+        for line in fh:
+            cols = line.split()
+            s = cols[0]
+            v = [istrue(cols[i]) for i in [1, 2]]
+            try:
+                [sd[s][i].append(v[i]) for i in range(2)]
+            except KeyError:
+                sd[s] = [[v[0],], [v[1],]]
+    segdict = {}
+    for k in sd:
+        b = sum(sd[k][0]) / len(sd[k][0])
+        if sum(sd[k][0]) == 0:
+            o = False
+        else:
+            o = (sum(sd[k][1]) / sum(sd[k][0]) >= 0.5)
+        segdict[k] = (b, o)
+    return segdict
+    
 def unique_everseen(iterable, key=None):
     "List unique elements, preserving order. Remember all elements ever seen."
     # unique_everseen('AAAABBBCCDAABBB') --> A B C D
@@ -159,9 +185,9 @@ def makemotif(p_mat, o_mat):
         w_mat[idx] = 0
 
     #Check motif is valid
-    strands = set([i for p, o in motif for i in p])
-    if len(strands) < len(p_mat):
-        raise ValueError('Cannot construct valid motif')
+#    strands = set([i for p, o in motif for i in p])
+#    if len(strands) < len(p_mat):
+#        raise ValueError('Cannot construct valid motif')
     return motif
 
 def follow(links, start):
@@ -280,8 +306,8 @@ def makematrices(strands, scores, n, m):
     for k, g in groupby(
             sorted(scores, key=itemgetter(0,1), reverse=True),
             key=itemgetter(0,1)):
-        i = strands.index(k[0])
-        j = strands.index(k[1])
+        i = k[0]
+        j = k[1]
         if j < i:
             i, j = j, i
         try:
@@ -292,8 +318,8 @@ def makematrices(strands, scores, n, m):
         if s[3]:
             o_mat[i, j] = 1
 
-    if hasunpaird(c_mat):
-        raise ValueError('Cannot make structure without unpaired strand.')
+#    if hasunpaird(c_mat):
+#        raise ValueError('Cannot make structure without unpaired strand.')
     
     # Apply cutoff, but do not leave unpaired strand
     entries = []
@@ -307,10 +333,13 @@ def makematrices(strands, scores, n, m):
             row, col = entry[:2]
             w_mat = c_mat.copy()
             w_mat[row, col] = 0
-            if hasunpaird(w_mat):
-                continue
-            else:
-                c_mat[row, col] = 0
+
+#            if hasunpaird(w_mat):
+#                continue
+#            else:
+#                c_mat[row, col] = 0
+
+            c_mat[row, col] = 0
 
     return c_mat, o_mat
 
@@ -323,7 +352,8 @@ def adjust(the_motif, score):
     genus = fg.genus
     bound = len(fg.boundaries)
     try:
-        score += (math.log1p(bg_mat[genus, bound]) / math.log(466)) * FACTOR
+        score *= (math.log1p(bg_mat[genus, bound]) / math.log(466)) * FACTOR
+        #score += (math.log1p(bg_mat[genus, bound]) / math.log(466)) * FACTOR
     except IndexError:
         pass
     return score
@@ -378,96 +408,96 @@ def compare(tmot, pmot):
 
     return TP, FP, TN, FN, len(c_pairs), len(c_links)
 
-def align(pid, sd, bd, lf, md, of, mo, debug):
-    if debug:
-        print('Processing {}.....'.format(pid))
+def align(pid, sd, bd, lf, md, of, mo):
+    logging.debug('Processing {}.....'.format(pid))
+
     # Load learning data. llst is a list of unique sequences.
-    learn = loadlearning(lf)
-    if debug:
-        print(learn.most_common(10))
-    ll = learn.elements()
-    llst = []
-    for l in ll:
-        llst += list(l[0])
-    llst = list(unique_everseen(llst))
+    learn = loadsegfile(lf)
 
     # Load sequences for the given protein id, and find beta strands
     sd = pathlib.Path(sd)
     sf = sd / 'summary{}.txt'.format(pid.upper())
     dseq = dsspseq(sf)
     rseq = resseq(sf)
-    if debug:
-        print(dseq)
-        print(rseq)
+    logging.debug(dseq)
+    logging.debug(rseq)
 
     strands = []
     for m in re.finditer(r'S+', dseq):
         strands.append((m.start(), m.end()-1))
-    if debug:
-        print(strands)
-        for strand in strands:
-            print(rseq[strand[0]: strand[1]+1])
+    logging.debug(strands)
 
-    # For each strand, compute alignment score for all seqences in llst
+    segs = []
+    for s, t in zip(strands, strands[1:]):
+        dseg = dseq[s[1]+1 : t[0]]
+        rseg = rseq[s[1]+1 : t[0]]
+        seg = []
+        for k, s in enumerate(rseg):
+            if dseg[k] == 'H':
+                seg.append('@')
+            else:
+                seg.append(s)
+        segs.append(''.join(seg))
+    logging.debug(segs)
+
+    # For each seg, compute alignment score for all seqences in learn
     all_scores = {}
     ah = alignmenthelper.AlignmentHelper()
     smat = substmatrices.SubstitutionMatrices()
-    for strand in strands:
-        this = rseq[strand[0]: strand[1]+1]
-        mat = smat.blosum62
+    for k, seg in enumerate(segs):
+        mat = smat.blosum62plus
         maxscore = ah.alignStrict(
-            this.replace('!', '*'), this.replace('!', '*'),
+            seg.replace('!', '*'), seg.replace('!', '*'),
             substMatrix=mat, gapScore=GAP_SCORE, btrace=False)
         scores = []
-        for l in llst:
-            thisscore = ah.alignStrict(
-                this.replace('!', '*'), l.replace('!', '*'),
-                substMatrix=mat, gapScore=GAP_SCORE, btrace=False)
+        for l in learn:
+            try:
+                thisscore = ah.alignStrict(
+                    seg.replace('!', '*'), l.replace('!', '*'),
+                    substMatrix=mat, gapScore=GAP_SCORE, btrace=False)
+            except KeyError as e:
+                logging.error('Error while aligning {} with {}'.format(seg, l))
+                raise e
             if thisscore > 0:
                 scores.append((l, thisscore/maxscore))
 
         scores = sorted(scores, key=itemgetter(1), reverse=True)
-        if debug:
-            print(this)
-            print(scores[:6])
+        logging.debug(seg)
+        logging.debug(scores[:6])
 
-        all_scores[this] = scores
+        all_scores[seg] = scores
 
     # Create a matrix of bond-scores
-    learnkeys = {l[0]: l[1] for l in learn.keys()}
     c_scores = []
-    for i, j in combinations(strands, 2):
-        seq_i = rseq[i[0]: i[1]+1]
-        seq_j = rseq[j[0]: j[1]+1]
-        top_i = all_scores[seq_i][:N_ALIGNED]
-        top_j = all_scores[seq_j][:N_ALIGNED]
-        for s, t in product(top_i, top_j):
-            key = frozenset([s[0],t[0]])
-            if key in learnkeys:
-                c_scores.append((i, j, s[1]*t[1], learnkeys[key]))
-
-    if debug:
-        print('Strand pairings computed.')
+    for k, seg in enumerate(segs):
+        top = all_scores[seg][:N_ALIGNED]
+        matched = top[0]
+        c_scores.append((k, k+1, matched[1] * learn[matched[0]][0], learn[matched[0]][1]))
+        
+    logging.debug('Strand pairings computed.')
 
     motifs = []
     for n, m in product(range(MAX_ORDER), CUTOFF_VALUES):
         try:
             c_mat, o_mat = makematrices(strands, c_scores, n, m)
-        except ValueError:
+        except ValueError as e:
+            raise e
             continue
         try:
             motif = makemotif(c_mat, o_mat)
-        except ValueError:
+        except ValueError as e:
+            raise e
             continue
         s_score = sum([c_mat[p[0]] for p in motif])
         motifs.append((motif, s_score))
 
     if not motifs:
-        raise NoValidMotifError(pid)
+        msg = ('Cannot generate valid structure for {}. '
+               'Consider raising N_ALIGNED value.'.format(pid))
+        raise NoValidMotifError(msg)
 
-    if debug:
-        print('Candidate motifs generated.')
-        print(motifs)
+    logging.debug('Candidate motifs generated.')
+    logging.debug(motifs)
 
     if md:
         md = pathlib.Path(md)
@@ -486,9 +516,8 @@ def align(pid, sd, bd, lf, md, of, mo, debug):
         motif = themot
     else:
         a_motifs = [(mot, adjust(mot, score)) for mot, score in motifs]
-        if debug:
-            print('Motif scores computed.')
-            print(a_motifs)
+        logging.debug('Motif scores computed.')
+        logging.debug(a_motifs)
         motif = max(a_motifs, key=itemgetter(1))[0]
             
     if mo and of:
@@ -501,8 +530,7 @@ def align(pid, sd, bd, lf, md, of, mo, debug):
         return
         
     vertices = tovertices(motif)
-    if debug:
-        print(vertices)
+    logging.debug(vertices)
     vs, es, ies = makefatgraph(vertices)
     if of:
         of = of.rstrip('/')
@@ -514,6 +542,8 @@ def align(pid, sd, bd, lf, md, of, mo, debug):
         print('{}:in_edges={}'.format(pid, ies))
 
 def main(pid, sd, bd, lf, md, of, sl, mo, debug):
+    if debug:
+        logging.basicConfig(format='%(message)s', level=logging.DEBUG)
     if sl:
         tcount = int(os.environ['SLURM_NTASKS'])
         tid = int(os.environ['SLURM_PROCID'])
@@ -523,12 +553,12 @@ def main(pid, sd, bd, lf, md, of, sl, mo, debug):
         for pid in plst:
             if not (pathlib.Path(of) / '{}.pkl'.format(pid)).exists():
                 try:
-                    align(pid, sd, bd, lf, md, of, mo, debug)
+                    align(pid, sd, bd, lf, md, of, mo)
                 except NoValidMotifError as e:
                     print(e)
     else:
         try:
-            align(pid, sd, bd, lf, md, of, mo, debug)
+            align(pid, sd, bd, lf, md, of, mo)
         except NoValidMotifError as e:
             print(e)
 
@@ -544,7 +574,7 @@ if __name__=='__main__':
     parser.add_argument('bonddir',
                         help='Directory containing hbond files.')
     parser.add_argument('learningf',
-                        help='File with beta-strand connections.')
+                        help='File with alpha/gamma segments.')
     parser.add_argument('-c', '--compare',
                         help='Compare with the true motifs stored '
                         'in the specified directory and choose the '
