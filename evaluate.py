@@ -4,7 +4,7 @@ import argparse, pickle, pathlib
 from itertools import combinations
 from math import sqrt
 
-def compare(tmot, pmot, seq):
+def compare(tmot, pmot, opt):
     with open(tmot, 'rb') as fh:
         thetmot = pickle.load(fh)
 
@@ -23,21 +23,27 @@ def compare(tmot, pmot, seq):
 
     tpairs = {t[0] for t in tmot}
     ppairs = {p[0] for p in pmot}
-    if seq:
+    strands = range(max(s for p in tpairs for s in p) + 1)
+    apairs = set(combinations(strands, 2))
+    if opt==1:
         tpairs = {p for p in tpairs if p[1]-p[0]==1}
         ppairs = {p for p in ppairs if p[1]-p[0]==1}
-    apairs = set(combinations(sorted(set(s for p in tpairs for s in p)),2))
+        apairs = {p for p in apairs if p[1]-p[0]==1}
+    elif opt==2:
+        tpairs = {p for p in tpairs if p[1]-p[0]>1}
+        ppairs = {p for p in ppairs if p[1]-p[0]>1}
+        apairs = {p for p in apairs if p[1]-p[0]>1}
     TP = len(tpairs & ppairs)
     FP = len(ppairs - tpairs)
     TN = len((apairs - tpairs) & (apairs - ppairs))
     FN = len(tpairs - ppairs)
 
     c_pairs = set(p for p in pmot if p[0] in tpairs)
-    c_links = set(p for p in pmot if p in tmot)
+    c_links = set(p for p in pmot if p in tmot and p[0] in tpairs)
 
     return TP, FP, TN, FN, len(c_pairs), len(c_links)
 
-def main(t_dir, p_dir, seq):
+def main(t_dir, p_dir, opt):
     tdir = pathlib.Path(t_dir)
     pdir = pathlib.Path(p_dir)
     tfs = tdir.glob('*.pkl')
@@ -51,7 +57,7 @@ def main(t_dir, p_dir, seq):
     for pf in pfs:
         for tf in tfs:
             if pf.name.upper() == tf.name.upper():
-                TP, FP, TN, FN, CP, CL = compare(tf, pf, seq)
+                TP, FP, TN, FN, CP, CL = compare(tf, pf, opt)
                 theTP += TP
                 theFP += FP
                 theTN += TN
@@ -66,16 +72,23 @@ def main(t_dir, p_dir, seq):
 
     specificity = theTN / (theTN + theFP)
     sensitivity = theTP / (theTP + theFN)
-    correlation = (theTP*theTN - theFP*theFN) / \
-                  sqrt((theTP+theFN)*(theTP+theFP)*(theTN+theFN)*(theTN+theFP))
+    try:
+        correlation = (theTP*theTN - theFP*theFN) / \
+                      sqrt((theTP+theFN)*(theTP+theFP)*(theTN+theFN)*(theTN+theFP))
+    except ZeroDivisionError:
+        correlation = -99
     accuracy = (theTP + theTN) / (theTP + theTN + theFP + theFN)
 
     print('Specificity: {:.2%}'.format(specificity))
     print('Sensitivity: {:.2%}'.format(sensitivity))
     print('Correlation: {:.4f}'.format(correlation))
     print('Accuracy: {:.2%}'.format(accuracy))
+    try:
+        CO = theCL/theCP
+    except ZeroDivisionError:
+        CO = 0
     print('Correct orientation (for correctly identified pairs): '
-          '{:.2%}'.format(theCL/theCP))
+          '{:.2%}'.format(CO))
 
 
 if __name__ == "__main__":
@@ -88,7 +101,16 @@ if __name__ == "__main__":
     parser.add_argument('pred_motif_dir',
                         help='Directory containing pickle files '
                         'of  predicted motif.')
-    parser.add_argument('-s', '--sequential', action='store_true',
-                        help='Only consider pairing of sequential strands.')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('-s', '--sequential', action='store_true',
+                       help='Only consider pairing of sequential strands.')
+    group.add_argument('-o', '--nonseq', action='store_true',
+                       help='Only consider pairing of non-sequential strands.')
     args = parser.parse_args()
-    main(args.true_motif_dir, args.pred_motif_dir, args.sequential)
+    if args.sequential:
+        opt = 1
+    elif args.nonseq:
+        opt = 2
+    else:
+        opt = 0
+    main(args.true_motif_dir, args.pred_motif_dir, opt)
