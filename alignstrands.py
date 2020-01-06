@@ -408,7 +408,7 @@ def compare(tmot, pmot):
 
     return TP, FP, TN, FN, len(c_pairs), len(c_links)
 
-def align(pid, sd, bd, lf, md, of, mo):
+def align(pid, sd, bd, lf, md, of, mo, sp):
     logging.debug('Processing {}.....'.format(pid))
 
     # Load learning data. llst is a list of unique sequences.
@@ -428,13 +428,15 @@ def align(pid, sd, bd, lf, md, of, mo):
     logging.debug(strands)
 
     segs = []
-    for s, t in zip(strands, strands[1:]):
+    for s, t in zip(strands, strands[sp+1:]):
         dseg = dseq[s[1]+1 : t[0]]
         rseg = rseq[s[1]+1 : t[0]]
         seg = []
         for k, s in enumerate(rseg):
             if dseg[k] == 'H':
                 seg.append('@')
+            elif dseg[k] == 'S':
+                seg.append('=')
             else:
                 seg.append(s)
         segs.append(''.join(seg))
@@ -472,7 +474,7 @@ def align(pid, sd, bd, lf, md, of, mo):
     for k, seg in enumerate(segs):
         top = all_scores[seg][:N_ALIGNED]
         matched = top[0]
-        c_scores.append((k, k+1, matched[1] * learn[matched[0]][0], learn[matched[0]][1]))
+        c_scores.append((k, k+sp+1, matched[1] * learn[matched[0]][0], learn[matched[0]][1]))
         
     logging.debug('Strand pairings computed.')
 
@@ -541,7 +543,7 @@ def align(pid, sd, bd, lf, md, of, mo):
         print('{}:edges={}'.format(pid, es))
         print('{}:in_edges={}'.format(pid, ies))
 
-def main(pid, sd, bd, lf, md, of, sl, mo, debug):
+def main(pid, sd, bd, lf, md, of, sl, mo, sp, debug):
     if debug:
         logging.basicConfig(format='%(message)s', level=logging.DEBUG)
     if sl:
@@ -553,12 +555,12 @@ def main(pid, sd, bd, lf, md, of, sl, mo, debug):
         for pid in plst:
             if not (pathlib.Path(of) / '{}.pkl'.format(pid)).exists():
                 try:
-                    align(pid, sd, bd, lf, md, of, mo)
+                    align(pid, sd, bd, lf, md, of, mo, sp)
                 except NoValidMotifError as e:
                     print(e)
     else:
         try:
-            align(pid, sd, bd, lf, md, of, mo)
+            align(pid, sd, bd, lf, md, of, mo, sp)
         except NoValidMotifError as e:
             print(e)
 
@@ -585,9 +587,11 @@ if __name__=='__main__':
                         help='Run this on slurm.')
     parser.add_argument('-m', '--motif', action='store_true',
                         help='Return motif instead of fatgraph.')
+    parser.add_argument('-k', '--skip', type=int, default=0,
+                        help='Each segment includes s beta strand(s).')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Display debug messages.')
     args = parser.parse_args()
     main(args.pid, args.seqdir, args.bonddir, args.learningf,
          args.compare, args.output, args.slurm, args.motif,
-         args.debug)
+         args.skip, args.debug)

@@ -25,14 +25,15 @@ def compare(tmot, pmot, opt):
     ppairs = {p[0] for p in pmot}
     strands = range(max(s for p in tpairs for s in p) + 1)
     apairs = set(combinations(strands, 2))
-    if opt==1:
-        tpairs = {p for p in tpairs if p[1]-p[0]==1}
-        ppairs = {p for p in ppairs if p[1]-p[0]==1}
-        apairs = {p for p in apairs if p[1]-p[0]==1}
-    elif opt==2:
-        tpairs = {p for p in tpairs if p[1]-p[0]>1}
-        ppairs = {p for p in ppairs if p[1]-p[0]>1}
-        apairs = {p for p in apairs if p[1]-p[0]>1}
+    if opt > 0:
+        tpairs = {p for p in tpairs if p[1]-p[0]==opt}
+        ppairs = {p for p in ppairs if p[1]-p[0]==opt}
+        apairs = {p for p in apairs if p[1]-p[0]==opt}
+    elif opt < 0:
+        opt *= -1
+        tpairs = {p for p in tpairs if p[1]-p[0]>opt}
+        ppairs = {p for p in ppairs if p[1]-p[0]>opt}
+        apairs = {p for p in apairs if p[1]-p[0]>opt}
     TP = len(tpairs & ppairs)
     FP = len(ppairs - tpairs)
     TN = len((apairs - tpairs) & (apairs - ppairs))
@@ -43,7 +44,7 @@ def compare(tmot, pmot, opt):
 
     return TP, FP, TN, FN, len(c_pairs), len(c_links)
 
-def main(t_dir, p_dir, opt):
+def main(t_dir, p_dir, diag):
     tdir = pathlib.Path(t_dir)
     pdir = pathlib.Path(p_dir)
     tfs = tdir.glob('*.pkl')
@@ -57,7 +58,7 @@ def main(t_dir, p_dir, opt):
     for pf in pfs:
         for tf in tfs:
             if pf.name.upper() == tf.name.upper():
-                TP, FP, TN, FN, CP, CL = compare(tf, pf, opt)
+                TP, FP, TN, FN, CP, CL = compare(tf, pf, diag)
                 theTP += TP
                 theFP += FP
                 theTN += TN
@@ -82,7 +83,7 @@ def main(t_dir, p_dir, opt):
     print('Specificity: {:.2%}'.format(specificity))
     print('Sensitivity: {:.2%}'.format(sensitivity))
     print('Correlation: {:.4f}'.format(correlation))
-    print('Accuracy: {:.2%}'.format(accuracy))
+    print('Accuracy:    {:.2%}'.format(accuracy))
     try:
         CO = theCL/theCP
     except ZeroDivisionError:
@@ -101,16 +102,9 @@ if __name__ == "__main__":
     parser.add_argument('pred_motif_dir',
                         help='Directory containing pickle files '
                         'of  predicted motif.')
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument('-s', '--sequential', action='store_true',
-                       help='Only consider pairing of sequential strands.')
-    group.add_argument('-o', '--nonseq', action='store_true',
-                       help='Only consider pairing of non-sequential strands.')
+    parser.add_argument('-d', '--diag', type=int, default=0,
+                        help="Only consider d'th diagonal. If negative "
+                        "value is given, consider all entries to the "
+                        "right of d'th diagonal.")
     args = parser.parse_args()
-    if args.sequential:
-        opt = 1
-    elif args.nonseq:
-        opt = 2
-    else:
-        opt = 0
-    main(args.true_motif_dir, args.pred_motif_dir, opt)
+    main(args.true_motif_dir, args.pred_motif_dir, args.diag)

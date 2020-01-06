@@ -127,7 +127,7 @@ def isbonded(f, s, bonds):
             return True
     return False
 
-def main(pid, sd, bd, ar, debug):
+def main(pid, sd, bd, skip, ar, debug):
     if debug:
         logging.basicConfig(level=logging.DEBUG,
                             format='%(message)s')
@@ -149,7 +149,7 @@ def main(pid, sd, bd, ar, debug):
     for strand in strands:
         logging.debug(rseq[strand[0]: strand[1]+1])
 
-    for f, s in zip(strands, strands[1:]):
+    for f, s in zip(strands, strands[skip+1:]):
         if isbonded(f, s, bonds):
             b = True
             try:
@@ -169,6 +169,8 @@ def main(pid, sd, bd, ar, debug):
             for k, s in enumerate(seg):
                 if dseg[k] == 'H':
                     lst.append('@')
+                elif dseg[k] == 'S':
+                    lst.append('=')
                 else:
                     lst.append(s)
             seg = ''.join(lst)
@@ -183,6 +185,9 @@ if __name__ == '__main__':
                         help='Directory containing summary* files.')
     parser.add_argument('bonddir',
                         help='Directory containing hbond files.')
+    parser.add_argument('-s', '--skip', type=int, default=0,
+                        help="Include s beta strands in the resulting "
+                        "segments. Beta strands are shown as =.")
     parser.add_argument('-a', '--all-residue', action='store_true',
                         help='Record alpha segment as residues '
                         'instead of as alphas.')
@@ -190,4 +195,4 @@ if __name__ == '__main__':
                         help='Verbose output.')
     args = parser.parse_args()
     main(args.protid, args.seqdir, args.bonddir,
-         args.all_residue, args.debug)
+         args.skip, args.all_residue, args.debug)
