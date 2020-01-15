@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 
-MAT_FILE = 'genbound_arr.pkl'
 CUTOFF = 0.2
-BG_CUTOFF = 0.5
-
-bg_mat = []
 
 import argparse, pickle, logging, pathlib
 from itertools import combinations, product, accumulate
 from operator import mul
 from datetime import datetime
 import numpy as np
-from fatgraph.fatgraph import Fatgraph
 
 class BarrelError(Exception):
     pass
@@ -84,29 +79,6 @@ def findsheetat(k, mat):
             raise BarrelError
         sheet.append(thisk)
     return sheet
-
-def findsheets(p_mat):
-    "Sheets from pairting matrix"
-    '''
-    findsheets([[0,0,1,0],
-                [0,0,1,0],
-                [0,0,0,0],
-                [0,0,0,0]])
-    --> [[0,2,1],[3]]
-    '''
-    wmat = np.triu(p_mat,1) + np.triu(p_mat,1).T
-    edges = [i for i in range(len(wmat))
-             if np.count_nonzero(wmat[i])<2]
-    sheets = []
-    while edges:
-        e = edges.pop(0)
-        sheet = findsheetat(e, wmat)
-        if sheet[0] > sheet[-1]:
-            sheet = sheet[::-1]
-        sheets.append(sheet)
-        if sheet[-1] in edges:
-            edges.remove(sheet[-1])
-    return sheets
 
 def hasbarrel(mat):
     "Determine if given *full* pairing matrix has barrels."
@@ -198,90 +170,6 @@ def completions(p_mat, o_mat):
                     x_mat[indices[i]] = v
                 yield np.triu(c_mat, 1), x_mat
 
-def makevertices(sheets, o_mat):
-    "Vertices from sheets and orientation matrix."
-    '''
-    [[0,1,2]], [[False, False, False],
-                [False, False, True],
-                [False, False, False]]
-    --> [[(0,1),(11,10),(21,20)]]
-    '''
-    omat = np.triu(o_mat, 1) + np.triu(o_mat, 1).T
-    vertices = []
-    for sheet in sheets:
-        oseq = []
-        for i, j in zip(sheet, sheet[1:]):
-            if omat[i,j]:
-                oseq.append(1)
-            else:
-                oseq.append(-1)
-            oseq = list(accumulate(oseq, mul))
-        vertex = []
-        i = sheet.pop(0)
-        vertex.append((i*10, i*10+1))
-        for i, s in enumerate(sheet):
-            if oseq[i]>0:
-                vertex.append((s*10, s*10+1))
-            else:
-                vertex.append((s*10+1, s*10))
-        first = min(vertex)
-        if first[0] > first[1]:
-            vertex = [(s[1],s[0]) for s in vertex]
-        vertices.append(vertex)
-    return vertices
-
-def makefatgraph(vertices):
-    '''
-    Construct vertices, edges, & internal edges from given vertices.
-    '''
-    vdict = {}
-    for vertex in vertices:
-        #We want anti-clockwise ordering of half-edges on each vertex
-        l = [v[0] for v in vertex] + [v[1] for v in vertex][::-1]
-        r = len(vdict)
-        for i in range(r, r+len(l)):
-            vdict[l[i - r]] = i + 1
-
-    #Now we find edges
-    halfedges = sorted([i for vertex in vertices
-                        for v in vertex
-                        for i in v])
-    edges = [(i, j) for i, j in zip(halfedges, halfedges[1:])]
-    #edges = [(halfedges[i], halfedges[i+1])
-    #         for i in range(1, len(halfedges)-2, 2)]
-
-    #Translate vertices and edges according to vdict
-    v = []
-    p = 1
-    for vertex in vertices:
-        v.append(tuple(range(p, 2*len(vertex)+p)))
-        p += 2*len(vertex)
-
-    iv = []
-    iedges = [e for vertex in vertices for e in vertex]
-    for e in iedges:
-        iv.append((vdict[e[0]], vdict[e[1]]))
-
-    e = []
-    for d in edges:
-        edge = (vdict[d[0]], vdict[d[1]])
-        if edge[0] > edge[1]:
-            edge = edge[::-1]
-        if edge not in iv:
-            e.append(edge)
-
-    return set(v), set(e), set(iv)
-
-def getscore(fg, k):
-    global bg_mat
-    g = fg.genus
-    b = len(fg.boundaries)
-    try:
-        score = bg_mat[g, b] / np.amax(bg_mat)
-    except IndexError:
-        score = 0
-    return score
-
 def tomotif(p_mat, o_mat):
     "Make motif from valid pairing and orientation matrices"
     wmat = p_mat.copy()
@@ -316,24 +204,13 @@ def main(partial, n, save, dbg):
         else:
             print(motif)
     else:
-        with open(MAT_FILE, 'rb') as fh:
-            global bg_mat
-            bg_mat = pickle.load(fh)
         part_mat = makepartialmatrix(s_mat)
         logger.debug('Partial matrix:')
         logger.debug(part_mat)
         motifs = []
         for pmat, omat in completions(part_mat, o_mat):
             logger.debug(pmat)
-            sheets = findsheets(pmat)
-            vertices = makevertices(sheets, omat)
-            v, e, iv = makefatgraph(vertices)
-            fg = Fatgraph(v, e)
-            k = max([len(sheet) for sheet in sheets])
-            if getscore(fg, k) > BG_CUTOFF:
-                motifs.append((tomotif(pmat, omat), True))
-            else:
-                motifs.append((tomotif(pmat, omat), False))
+            motifs.append(tomotif(pmat, omat))
         end = datetime.now()
         d = end - start
         logger.info('{}: Finished {} in {} seconds'.format(

@@ -18,6 +18,7 @@ def test_offdiagonal():
     fpm.CUTOFF = .6
     assert fpm.offdiagonal(smat, omat, 2) == {((0,2),True), }
 
+
 def test_findsheetat():
     smat = np.array([[0, 1, 0, 1, 0],
                      [1, 0, 0, 0, 0],
@@ -31,6 +32,7 @@ def test_findsheetat():
     with pytest.raises(fpm.BarrelError):
         fpm.findsheetat(2, smat)
 
+'''
 def test_findsheeets():
     pmat = np.array([[0,0,1,0],
                      [0,0,1,0],
@@ -41,6 +43,7 @@ def test_findsheeets():
     assert fpm.findsheets(pmat) == [[0,3],[1,2]]
     pmat[2,3] = 1
     assert fpm.findsheets(pmat) == [[0,3,2,1]]
+'''
 
 def test_hasbarrel():
     smat = np.array([[0, 1, 0, 1, 0],
@@ -108,7 +111,8 @@ def test_completions():
     pmat[1,2] = -1
     assert len(list(fpm.completions(pmat, omat))) == 1
 
-def test_makevertices():
+'''
+    def test_makevertices():
     sts = [[0,1,2]]
     omat = np.array([[False, False, False],
                      [False, False, True],
@@ -132,3 +136,4 @@ def test_makefatgraph():
         ({(1,2,3,4),(5,6,7,8,9,10)},
          {(2,8),(4,6),(5,7),(9,10)},
          {(1,4),(2,3),(5,10),(6,9),(7,8)})
+'''
