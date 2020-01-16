@@ -104,6 +104,7 @@ def hasisolated(mat):
 def makepartialmatrix(s_mat):
     "Partial pairing matrix from score matrix. "
     "Forbid barrels and bifurcations. Isolated strands are allowed."
+    "If s_mat is 2x2, connect the two strands. "
     '''
     array([[ 0,.8,.5,-1, 0],       array([[ 0, 1,-1,-1, 0],
            [ 0, 0,.6,-1,-1],              [ 0, 0, 1,-1,-1],
@@ -111,21 +112,25 @@ def makepartialmatrix(s_mat):
            [ 0, 0, 0, 0,.7],              [ 0, 0, 0, 0, 1],
            [ 0, 0, 0, 0, 0]])             [ 0, 0, 0, 0, 0]])
     '''
-    w_mat = np.where(np.logical_and(s_mat>0, s_mat<CUTOFF), -1, s_mat)
+    w_mat = np.copy(s_mat)
     m_mat = np.zeros_like(w_mat, dtype=int)
-    while w_mat.max() > 0:
-        idx = np.unravel_index(np.argmax(w_mat), w_mat.shape)
-        m_mat[idx] = 1
-        r_idx = idx[::-1]
-        m_mat[r_idx] = 1
-        if isbifurcated(m_mat) or hasbarrel(m_mat):
-            m_mat[idx] = 0
-            m_mat[r_idx] = 0
-        w_mat[idx] = 0
-    mat = np.where(s_mat > 0, m_mat, s_mat)
-    return np.where(np.logical_and(mat==0, s_mat!=0), -1, mat)
+    if len(m_mat) == 2:
+        m_mat[0,1] = 1
+        return m_mat
+    else:
+        while w_mat.max() > 0:
+            idx = np.unravel_index(np.argmax(w_mat), w_mat.shape)
+            m_mat[idx] = 1
+            r_idx = idx[::-1]
+            m_mat[r_idx] = 1
+            if isbifurcated(m_mat) or hasbarrel(m_mat):
+                m_mat[idx] = 0
+                m_mat[r_idx] = 0
+            w_mat[idx] = 0
+        mat = np.where(s_mat > 0, m_mat, s_mat)
+        return np.where(np.logical_and(mat==0, s_mat!=0), -1, mat)
 
-def completions(p_mat, o_mat):
+def completions(p_mat, o_mat, allow=False):
     "All possible completions of partial pairing matrix, excluding "
     "bifurcations, barrels, and isolated strands."
     "Return a list of tuples consisting score and orientation matrices."
@@ -137,10 +142,15 @@ def completions(p_mat, o_mat):
     isolated = [i for i in range(len(w_mat))
                 if np.count_nonzero((w_mat>0)[i])==0]
     es = sorted(edges + isolated)
-    if not any([isbifurcated(w_mat),
-                hasbarrel(w_mat),
-                hasisolated(w_mat)]):
-        yield np.where(p_mat>0, p_mat, 0), o_mat
+    if allow:
+        if not any([isbifurcated(w_mat),
+                         hasbarrel(w_mat)]):
+            yield np.where(p_mat>0, p_mat, 0), o_mat
+    else:
+        if not any([isbifurcated(w_mat),
+                    hasbarrel(w_mat),
+                    hasisolated(w_mat)]):
+            yield np.where(p_mat>0, p_mat, 0), o_mat
     for n in range(len(es)//2 + 1):
         for indices in set(combinations_repeat(es, 2, n)):
             if len(set(indices) & set(zip(*np.where(p_mat>0))))>0:
@@ -158,9 +168,9 @@ def completions(p_mat, o_mat):
                 r_idx = idx[::-1]
                 c_mat[r_idx] = 1
             if any([isbifurcated(c_mat),
-                    hasbarrel(c_mat),
-                    hasisolated(c_mat)]):
-                #c_mat results in invalid motif
+                    hasbarrel(c_mat)]):
+                continue
+            elif not allow and hasisolated(c_mat):
                 continue
             c_mat = np.where(c_mat>0, c_mat, 0)
             #c_mat is valid. Construct all possible omat
@@ -180,7 +190,12 @@ def tomotif(p_mat, o_mat):
         wmat[idx] = 0
     return motif
 
-def main(partial, n, save, dbg):
+def reduce_mat(mat):
+    "Reduce non-zero entries in mat depending on its size."
+    l = len(mat)
+    return np.tril(mat, max(l-5, 1))
+
+def main(partial, n, allow, save, dbg):
     if dbg:
         logging.basicConfig(format='%(message)s', level=logging.DEBUG)
     else:
@@ -205,10 +220,11 @@ def main(partial, n, save, dbg):
             print(motif)
     else:
         part_mat = makepartialmatrix(s_mat)
+        part_mat = reduce_mat(part_mat)
         logger.debug('Partial matrix:')
         logger.debug(part_mat)
         motifs = []
-        for pmat, omat in completions(part_mat, o_mat):
+        for pmat, omat in completions(part_mat, o_mat, allow):
             logger.debug(pmat)
             motifs.append(tomotif(pmat, omat))
         end = datetime.now()
@@ -234,9 +250,12 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--only', type=int,
                         help='Only consider o\'th diagonal, ignoring '
                         'validity of the resulting motif.')
+    parser.add_argument('-i', '--allow-isolated', action='store_true',
+                        help='Allow isolated strand in the resulting '
+                        'motifs.')
     parser.add_argument('-s', '--save',
                         help='Save output to this directory.')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Print debug messages.')
     args = parser.parse_args()
-    main(args.partial, args.only, args.save, args.debug)
+    main(args.partial, args.only, args.allow_isolated, args.save, args.debug)

@@ -65,8 +65,7 @@ def test_hasbarrel():
                      [0, 0, 0, 0, 0]])
     assert fpm.hasbarrel(smat)
 
-'''
-#This test fails, even though it succeeds in f.x. ipython...
+
 def test_makepartialmatrix():
     cmat = np.array([[ 0,.8,.5,-1, 0],
                      [ 0, 0,.6,-1,-1],
@@ -79,7 +78,7 @@ def test_makepartialmatrix():
                      [ 0, 0, 0, 0, 1],
                      [ 0, 0, 0, 0, 0]])
     assert np.allclose(fpm.makepartialmatrix(cmat), qmat)
-'''
+
 
 def test_combinations_repeat():
     assert set(fpm.combinations_repeat('ABCD', 2, 2)) == \

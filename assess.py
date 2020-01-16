@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 MAX_SIZE = 11
-MAT_FILE = 'gbs_arr.pkl'
-#MAT_FILE = 'genbound_arr.pkl'
+#MAT_FILE = 'gbs_arr.pkl'
+MAT_FILE = 'genbound_arr.pkl'
 BG_CUTOFF = 0.01
 
 import argparse, pickle, pathlib
@@ -266,9 +266,8 @@ def write_accepted(tmots, cmots):
     print('Accepted %  :' + ''.join(['{:>8.1%}'.format(pcts[i]) for i in range(n)]))
     print('\nTotal accepted: {:.2%}'.format(sum(accepted) / (sum(accepted) + sum(rejected)) ))
 
-def mot2mat(mot):
+def mot2mat(mot, l):
     "Make pairing and orientation matrices from motif"
-    l = len(set(i for p, o in mot for i in p))
     p_mat = np.zeros((l,l), dtype=int)
     o_mat = np.zeros((l,l), dtype=bool)
     for link in mot:
@@ -277,14 +276,14 @@ def mot2mat(mot):
         o_mat[i,j] = link[1]
     return p_mat, o_mat
 
-def apply_filter(mots, v):
+def apply_filter(mots, v, size):
     global BG_CUTOFF
     BG_CUTOFF = v
     with open(MAT_FILE, 'rb') as fh:
         bg_mat = pickle.load(fh)
     cmots = []
     for mot in mots:
-        pmat, omat = mot2mat(mot)
+        pmat, omat = mot2mat(mot, size)
         sheets = findsheets(pmat)
         vertices = makevertices(sheets, omat)
         v, e, iv = makefatgraph(vertices)
@@ -328,9 +327,9 @@ def main(tdir, pdir, v, ori):
             else:
                 tmot.add(((pair[1], pair[0]), not ori[0]==ori[1]))
         tmots[mf.stem] = tmot
-
     for k in cmots:
-        cmots[k] = apply_filter(cmots[k], v)
+        size = max(e for p, _ in tmots[k] for e in p) + 1
+        cmots[k] = apply_filter(cmots[k], v, size)
     write_accepted(tmots, cmots)
     write_assess(tmots, cmots, ori)
 

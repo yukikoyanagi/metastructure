@@ -191,7 +191,10 @@ def align(seg, candidates, pid):
             currentmax = maxscore
             bestcands = [cand,]
             break
-
+        m = max(mat.values())
+        if min(len(seg),len(cand))*m - \
+           abs(len(seg)-len(cand))*GAP_SCORE < 0:
+            continue
         score = ah.alignStrict(
             seg.replace('!', '*'), cand.replace('!', '*'),
             substMatrix=mat, gapScore=GAP_SCORE, btrace=False
