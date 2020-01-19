@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-MAX_SIZE = 11
-#MAT_FILE = 'gbs_arr.pkl'
-MAT_FILE = 'genbound_arr.pkl'
+MAX_SIZE = 13
+MAT_FILE = 'gbs_arr.pkl'
+#MAT_FILE = 'genbound_arr.pkl'
 BG_CUTOFF = 0.01
 
 import argparse, pickle, pathlib
@@ -298,7 +298,7 @@ def apply_filter(mots, v, size):
                 score = 0
         elif bg_mat.ndim == 3:
             try:
-                score = bg_mat[g,b,k] / np.sum(bg_mat)
+                score = bg_mat[g,b,k] / np.sum(bg_mat[:,:,k])
             except IndexError:
                 score = 0
         cmots.append((mot, score >= BG_CUTOFF))
@@ -312,12 +312,10 @@ def main(tdir, pdir, v, ori):
     cmots = {}
     tmots = {}
     for mf in pdir.glob('*.pkl'):
-        with open(mf, 'rb') as fh:
-            mots = pickle.load(fh)
-        cmots[mf.stem] = mots
-
         with open(tdir / '{}'.format(mf.name), 'rb') as fh:
             themot = pickle.load(fh)
+        if max(e for p, _ in themot for e in p) > MAX_SIZE - 1:
+            continue
 
         tmot = set()
         for link in themot:
@@ -327,6 +325,11 @@ def main(tdir, pdir, v, ori):
             else:
                 tmot.add(((pair[1], pair[0]), not ori[0]==ori[1]))
         tmots[mf.stem] = tmot
+
+        with open(mf, 'rb') as fh:
+            mots = pickle.load(fh)
+        cmots[mf.stem] = mots
+
     for k in cmots:
         size = max(e for p, _ in tmots[k] for e in p) + 1
         cmots[k] = apply_filter(cmots[k], v, size)
