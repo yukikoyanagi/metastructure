@@ -80,6 +80,29 @@ def findsheetat(k, mat):
         sheet.append(thisk)
     return sheet
 
+def findsheets(p_mat):
+    "Sheets from pairting matrix"
+    '''
+    findsheets([[0,0,1,0],
+                [0,0,1,0],
+                [0,0,0,0],
+                [0,0,0,0]])
+    --> {(0,2,1),(3,)}
+    '''
+    wmat = np.triu(p_mat,1) + np.triu(p_mat,1).T
+    edges = [i for i in range(len(wmat))
+             if np.count_nonzero(wmat[i])<2]
+    sheets = set()
+    while edges:
+        e = edges.pop(0)
+        sheet = tuple(findsheetat(e, wmat))
+        if sheet[0] > sheet[-1]:
+            sheet = sheet[::-1]
+        sheets.add(sheet)
+        if sheet[-1] in edges:
+            edges.remove(sheet[-1])
+    return sheets
+
 def hasbarrel(mat):
     "Determine if given *full* pairing matrix has barrels."
     seen = []
@@ -152,7 +175,15 @@ def completions(p_mat, o_mat, allow=False):
                     hasisolated(w_mat)]):
             yield np.where(p_mat>0, p_mat, 0), o_mat
     for n in range(len(es)//2 + 1):
-        for indices in set(combinations_repeat(es, 2, n)):
+        if n>0:
+            logging.debug('n={}; {}'.format(n-1, len(seen)))
+        seen = []
+        for indices in combinations_repeat(es, 2, n):
+            ps = set(indices)
+            if ps in seen:
+                continue
+            else:
+                seen.append(ps)
             if len(set(indices) & set(zip(*np.where(p_mat>0))))>0:
                 #Can't pair existing pair
                 continue
@@ -179,6 +210,119 @@ def completions(p_mat, o_mat, allow=False):
                 for i, v in enumerate(rs):
                     x_mat[indices[i]] = v
                 yield np.triu(c_mat, 1), x_mat
+
+def connect(to_pair, new_pair):
+    "Connect two sheets with new_pair"
+    "to_pair is a set of two sheets"
+    '''
+    connect({(1,2),(3,4)}, (1,4)) --> (2,1,4,3)
+    '''
+    if len(to_pair) != 2:
+        raise ValueError
+    for sheet in to_pair:
+        if new_pair[0] == sheet[0]:
+            first = sheet[::-1]
+        elif new_pair[0] == sheet[-1]:
+            first = sheet
+        elif new_pair[1] == sheet[0]:
+            second = sheet
+        elif new_pair[1] == sheet[-1]:
+            second = sheet[::-1]
+    connected = first + second
+    if connected[-1] < connected[0]:
+        connected = connected[::-1]
+    return connected
+
+def all_pairs(sheets, dist=0, last_pair=None, allow_single=False):
+    "Generate all valid pairings of ends, avoiding barrels"
+    "Isolated strand is an 1-tuple in sheets."
+    '''
+    all_pairs({(0,1),(2,3,4)}) -->
+    {(0,1), (2,3,4)}, {(0,1,2,3,4)}, {(1,0,2,3,4)}, 
+    {(0,1,4,3,2)}, {(2,3,4,0,1)}
+    '''
+    isolated = set(sheet[0] for sheet in sheets if len(sheet)==1)
+    goodsheets = set(sheet for sheet in sheets if len(sheet)>1)
+    paired_ends = set(i for sheet in goodsheets
+                      for i in (sheet[0], sheet[-1]))
+
+    if allow_single:
+        yield sheets
+    elif len(isolated) == 0:
+        yield sheets
+    ends = sorted(list(isolated  | paired_ends))
+    for newpair in combinations(ends, 2):
+        #newpair must be more than dist apart (-1 in matrix)
+        if abs(newpair[0]-newpair[1]) <= dist:
+            continue
+
+        #Check for duplicates.
+        if last_pair:
+            if newpair[0] < last_pair[0]:
+                continue
+            elif newpair[0]==last_pair[0] and newpair[1]<=last_pair[1]:
+                continue
+
+        #Check for barrels
+        abandon = False
+        for sheet in sheets:
+            if newpair[0] in sheet and newpair[1] in sheet:
+                abandon = True
+                break
+        if abandon:
+            continue
+
+        #Update sheets
+        newsheets = set()
+        topair = set()
+        for sheet in sheets:
+            if set(sheet).isdisjoint(set(newpair)):
+                newsheets.add(sheet)
+            else:
+                topair.add(sheet)
+                if len(topair) == 2:
+                    newsheet = connect(topair, newpair)
+                    newsheets.add(newsheet)
+        if len(newsheets) == 1:
+            yield newsheets
+        else:
+            for finalsheets in all_pairs(newsheets, dist,
+                                         newpair, allow_single):
+                yield finalsheets
+
+def tomat(sheets):
+    "Make pairing matrix from sheets"
+    n = len(set(i for sheet in sheets for i in sheet))
+    mat = np.zeros((n,n), dtype=int)
+    for sheet in sheets:
+        if len(sheet) < 2:
+            continue
+        for i, j in zip(sheet, sheet[1:]):
+            mat[i,j] = 1
+            mat[j,i] = 1
+    return mat
+
+def completions2(p_mat, o_mat, allow_single=False):
+    "All possible completions of partial pairing matrix, excluding "
+    "bifurcations, barrels, and isolated strands."
+    "Return a list of tuples consisting score and orientation matrices."
+    w_mat = p_mat + p_mat.T
+    lst = [idx[1]-idx[0] for idx in zip(*np.where(w_mat<0))]
+    try:
+        min_dist = max(lst)
+    except ValueError:
+        min_dist = 0
+    zero_mat = np.where(w_mat<0, 0, w_mat)
+    sheets = findsheets(zero_mat)
+    for goodsheets in all_pairs(sheets, min_dist, None, allow_single):
+        c_mat = tomat(goodsheets)
+        indices = [idx for idx in zip(*np.nonzero(c_mat-zero_mat))
+                   if idx[0] < idx[1]]
+        for rs in product([False, True], repeat=len(indices)):
+            x_mat = np.copy(o_mat)
+            for i, v in enumerate(rs):
+                x_mat[indices[i]] = v
+            yield np.triu(c_mat, 1), x_mat
 
 def tomotif(p_mat, o_mat):
     "Make motif from valid pairing and orientation matrices"
@@ -224,9 +368,10 @@ def main(partial, n, allow, save, dbg):
         logger.debug('Partial matrix:')
         logger.debug(part_mat)
         motifs = []
-        for pmat, omat in completions(part_mat, o_mat, allow):
-            logger.debug(pmat)
+        for pmat, omat in completions2(part_mat, o_mat, allow):
             motifs.append(tomotif(pmat, omat))
+            if len(motifs)%500==0:
+                logger.debug('{}: Found {}'.format(datetime.now(),len(motifs)))
         end = datetime.now()
         d = end - start
         logger.info('{}: Finished {} in {} seconds'.format(
