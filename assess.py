@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-MAX_SIZE = 13
+MAX_SIZE = 18
 MAT_FILE = 'gbs_arr.pkl'
 #MAT_FILE = 'genbound_arr.pkl'
 BG_CUTOFF = 0.01
 
-import argparse, pickle, pathlib
+import argparse, pickle, pathlib, logging
+import multiprocessing as mp
 from itertools import combinations, accumulate
 from operator import mul
 import numpy as np
@@ -160,99 +161,93 @@ def compare(tmot, pmot, ori):
 
     return TP, FP, TN, FN, len(c_pairs), len(c_links)
 
-def write_assess(tmots, cmots, ori):
-    a = {}
-    for k in tmots:
-        mots = cmots[k]
-        tmot = tmots[k]
-        acus = []
-        for pmot, acc in mots:
-            TP, FP, TN, FN, CP, CL = compare(tmot, pmot, ori)
-            acu = (TP + TN) / (TP + FP + TN + FN)
-            acus.append((acu, acc))
-        a[k] = acus
 
-    l = []
-    hi_acc = 0
-    hi_rej = 0
-    for k in a:
-        try:
-            hi_acc = max(p for p,t in a[k] if t)
-        except ValueError:
-            hi_acc = 0
-        try:
-            hi_rej = max(p for p,t in a[k] if not t)
-        except ValueError:
-            hi_rej = 0
-        l.append(hi_acc >= hi_rej)
-    print(
-        'Highest accuray accepted: {}/{} ({:.2%})'.format(
-            sum(l), len(l), sum(l)/len(l))
-    )
-    
-    n = sum(len(v) for v in a.values())
-    m = len([w for v in a.values() for w, t in v if w>=0.8])
-    print(
-        '# of candidates at 80% accuracy level: {:>5}/{:>5} ({:>6.2%})'.format(
-            m, n, m/n)
-    )
-    h = sum(t for v in a.values() for w, t in v if w>=0.8)
-    print(
-        '# of acceptance at 80% accuracy level: {:>5}/{:>5} ({:>6.2%})'.format(
-            h, m, h/m)
-    )
-    m = len([w for v in a.values() for w, t in v if w>=0.9])
-    print(
-        '# of candidates at 90% accuracy level: {:>5}/{:>5} ({:>6.2%})'.format(
-            m, n, m/n)
-    )
-    h = sum(t for v in a.values() for w, t in v if w>=0.9)
-    print(
-        '# of acceptance at 90% accuracy level: {:>5}/{:>5} ({:>6.2%})'.format(
-            h, m, h/m)
-    )
-    m = len([w for v in a.values() for w, t in v if w>=0.95])
-    print(
-        '# of candidates at 95% accuracy level: {:>5}/{:>5} ({:>6.2%})'.format(
-            m, n, m/n)
-    )
-    h = sum(t for v in a.values() for w, t in v if w>=0.95)
-    print(
-        '# of acceptance at 95% accuracy level: {:>5}/{:>5} ({:>6.2%})'.format(
-            h, m, h/m)
-    )
-    m = len([w for v in a.values() for w, t in v if w>=0.99])
-    print(
-        '# of candidates at 99% accuracy level: {:>5}/{:>5} ({:>6.2%})'.format(
-            m, n, m/n)
-    )
-    h = sum(t for v in a.values() for w, t in v if w>=0.99)
-    print(
-        '# of acceptance at 99% accuracy level: {:>5}/{:>5} ({:>6.2%})'.format(
-            h, m, h/m)
-    )
-    print('\n')
-
-def write_accepted(tmots, cmots):
+def write_accepted(results, count_proteins):
     with open(MAT_FILE, 'rb') as fh:
         bg_mat = pickle.load(fh)
     dim = bg_mat.ndim
     n = MAX_SIZE + 1
+    nall = len(results)
     accepted = [0 for i in range(n)]
     rejected = [0 for i in range(n)]
+    n80 = 0
+    a80 = 0
+    n90 = 0
+    a90 = 0
+    n95 = 0
+    a95 = 0
+    n99 = 0
+    a99 = 0
+    l = []
+    hi_acc = 0
+    hi_rej = 0
+    n_cand = [[] for i in range(n)]
+    cand_count = 0
+    pid = ''
 
-    for k in tmots:
-        mots = cmots[k]
-        tmot = tmots[k]
-        l = len(set(i for p, o in tmot for i in p))
-        for mot in mots:
-            if mot[-1]:
-                accepted[l] += 1
-            else:
-                rejected[l] += 1
+    for r in results:
+        if pid and r[0] != pid:
+            #Process one pid
+            l.append(hi_acc >= hi_rej)
+            hi_acc = 0
+            hi_rej = 0
+            n_cand[last_size].append(cand_count)
+            cand_count = 0
+        pid = r[0]
+        last_size = r[1]
+
+        #Highest accuracy among accepted/rejected
+        if r[2]:
+            accepted[r[1]] += 1
+            if r[3] > hi_acc:
+                hi_acc = r[3]
+        else:
+            rejected[r[1]] += 1
+            if r[3] > hi_rej:
+                hi_rej = r[3]
+
+        #Acceptance by min accuracy
+        if r[3] >= 0.8:
+            n80 += 1
+            if r[2]:
+                a80 += 1
+        if r[3] >= 0.9:
+            n90 += 1
+            if r[2]:
+                a90 += 1
+        if r[3] >= 0.95:
+            n95 += 1
+            if r[2]:
+                a95 += 1
+        if r[3] >= 0.99:
+            n99 += 1
+            if r[2]:
+                a99 += 1
+
+        #Count candidates
+        cand_count += 1
+
+    #Still need to process last pid
+    l.append(hi_acc >= hi_rej)
+    n_cand[r[1]].append(cand_count)
 
     print('==========================================================')
     print('\n')
+    if count_proteins:
+        
+        print('Number of proteins')
+        print('# Strands  :' + ''.join(['{:>8}'.format(i) for i in range(n)]))
+        print('# Proteins :' + ''.join(['{:>8}'.format(len(c)) for c in n_cand]))
+        print('#cands max.:' + ''.join(['{:>8}'.format(max(c, default=0)) for c in n_cand]))
+        print('#cands min.:' + ''.join(['{:>8}'.format(min(c, default=0)) for c in n_cand]))
+        avgs = []
+        for c in n_cand:
+            if len(c):
+                avgs.append(sum(c)/len(c))
+            else:
+                avgs.append(0)
+        print('Avg. cands :' + ''.join(['{:>8.1f}'.format(a) for a in avgs]))
+        print('\n')
     print('Number of candidates accepted at v={} ({}D heatmap filter)'.format(BG_CUTOFF, dim))
     print('# of strands:' + ''.join(['{:>8}'.format(i) for i in range(n)]))
     print('Accepted    :' + ''.join(['{:>8}'.format(accepted[i]) for i in range(n)]))
@@ -265,6 +260,43 @@ def write_accepted(tmots, cmots):
             pcts[i] = 0
     print('Accepted %  :' + ''.join(['{:>8.1%}'.format(pcts[i]) for i in range(n)]))
     print('\nTotal accepted: {:.2%}'.format(sum(accepted) / (sum(accepted) + sum(rejected)) ))
+    print(
+        'Highest accuray accepted: {}/{} ({:.2%})'.format(
+            sum(l), len(l), sum(l)/len(l))
+    )
+    print(
+        '# of candidates at 80% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            n80, nall, n80/nall)
+    )
+    print(
+        '# of acceptance at 80% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            a80, n80, a80/n80)
+    )
+    print(
+        '# of candidates at 90% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            n90, nall, n90/nall)
+    )
+    print(
+        '# of acceptance at 90% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            a90, n90, a90/n90)
+    )
+    print(
+        '# of candidates at 95% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            n95, nall, n95/nall)
+    )
+    print(
+        '# of acceptance at 95% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            a95, n95, a95/n95)
+    )
+    print(
+        '# of candidates at 99% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            n99, nall, n99/nall)
+    )
+    print(
+        '# of acceptance at 99% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            a99, n99, a99/n99)
+    )
+    print('\n')
 
 def mot2mat(mot, l):
     "Make pairing and orientation matrices from motif"
@@ -277,6 +309,7 @@ def mot2mat(mot, l):
     return p_mat, o_mat
 
 def apply_filter(mots, v, size):
+
     global BG_CUTOFF
     BG_CUTOFF = v
     with open(MAT_FILE, 'rb') as fh:
@@ -304,7 +337,58 @@ def apply_filter(mots, v, size):
         cmots.append((mot, score >= BG_CUTOFF))
     return cmots
 
-def main(tdir, pdir, v, ori):
+def applyfilter(mot, bg_mat, size):
+    logger = logging.getLogger()
+    try:
+        pmat, omat = mot2mat(mot, size)
+    except IndexError as e:
+        logger.info('{} with size {}'.format(mot, size))
+        raise e
+    sheets = findsheets(pmat)
+    vertices = makevertices(sheets, omat)
+    v, e, iv = makefatgraph(vertices)
+    fg = Fatgraph(v, e)
+    g = fg.genus
+    b = len(fg.boundaries)
+    k = max(len(sheet) for sheet in sheets)
+    if bg_mat.ndim == 2:
+        try:
+            score = bg_mat[g,b] / np.sum(bg_mat)
+        except IndexError:
+            score = 0
+    elif bg_mat.ndim == 3:
+        try:
+            score = bg_mat[g,b,k] / np.sum(bg_mat[:,:,k])
+        except IndexError:
+            score = 0
+    return score >= BG_CUTOFF
+
+def computemany(data):
+    logger = logging.getLogger()
+    output = []
+    for pid, tmot, cmot in data:
+        TP, FP, TN, FN, CP, CL = compare(tmot, cmot, False)
+        accuracy = (TP + TN) / (TP + TN + FP + FN)
+        sensitivity = TP / (TP + FN)
+        try:
+            specificity = TN / (TN + FP)
+        except ZeroDivisionError as e:
+            specificity = 1.0
+        size = len(set(e for p, _ in tmot for e in p))
+        with open(MAT_FILE, 'rb') as fh:
+            bg_mat = pickle.load(fh)
+        accepted = applyfilter(cmot, bg_mat, size)
+        output.append((pid, size, accepted, accuracy,
+                       sensitivity, specificity))
+    return output
+
+def main(tdir, pdir, v, ori, cpus, msize, cnt):
+    logging.basicConfig(level=logging.INFO)
+
+    global BG_CUTOFF
+    BG_CUTOFF = v
+    global MAX_SIZE
+    MAX_SIZE = msize
 
     pdir = pathlib.Path(pdir)
     tdir = pathlib.Path(tdir)
@@ -330,11 +414,29 @@ def main(tdir, pdir, v, ori):
             mots = pickle.load(fh)
         cmots[mf.stem] = mots
 
+    i = 0
+    data = []
+    chunk = []
     for k in cmots:
-        size = max(e for p, _ in tmots[k] for e in p) + 1
-        cmots[k] = apply_filter(cmots[k], v, size)
-    write_accepted(tmots, cmots)
-    write_assess(tmots, cmots, ori)
+        for mot in cmots[k]:
+            chunk.append((k, tmots[k], mot))
+            i += 1
+            if i == 5000:
+                data.append(chunk)
+                i = 0
+                chunk = []
+    else:
+        data.append(chunk)
+    
+    pool = mp.Pool(processes=cpus)
+    res_objects = [pool.apply_async(
+        computemany, args=(chunk,)
+    ) for chunk in data]
+    pool.close()
+    pool.join()
+    results = [item for r in res_objects for item in r.get()]
+
+    write_accepted(results, cnt)
 
 
 
@@ -354,6 +456,13 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--orientation', action='store_true',
                         help='Consider parallel/anti-parallel when '
                         'computing accuracy.')
+    parser.add_argument('-c', '--cpus', type=int,
+                        help='Number of cores to use in computation')
+    parser.add_argument('-m', '--maxsize', type=int,
+                        help='Maximum size of protein to consider')
+    parser.add_argument('-p', '--count_proteins', action='store_true',
+                        help='Display count of proteins per size')
     args = parser.parse_args()
     main(args.true_motif_dir, args.pred_motif_dir,
-         args.cutoff, args.orientation)
+         args.cutoff, args.orientation, args.cpus, args.maxsize,
+         args.count_proteins)
