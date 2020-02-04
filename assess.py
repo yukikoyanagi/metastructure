@@ -162,7 +162,7 @@ def compare(tmot, pmot, ori):
     return TP, FP, TN, FN, len(c_pairs), len(c_links)
 
 
-def write_accepted(results, count_proteins):
+def write_accepted(results, by_protein, count_proteins):
     with open(MAT_FILE, 'rb') as fh:
         bg_mat = pickle.load(fh)
     dim = bg_mat.ndim
@@ -178,6 +178,9 @@ def write_accepted(results, count_proteins):
     a95 = 0
     n99 = 0
     a99 = 0
+    if by_protein:
+        _n80, _n90, _n95, _n99 = 0, 0, 0, 0
+        _a80, _a90, _a95, _a99 = 0, 0, 0, 0
     l = []
     hi_acc = 0
     hi_rej = 0
@@ -193,6 +196,17 @@ def write_accepted(results, count_proteins):
             hi_rej = 0
             n_cand[last_size].append(cand_count)
             cand_count = 0
+            if by_protein:
+                n80 += _n80
+                n90 += _n90
+                n95 += _n95
+                n99 += _n99
+                a80 += _a80
+                a90 += _a90
+                a95 += _a95
+                a99 += _a99
+                _n80, _n90, _n95, _n99 = 0, 0, 0, 0
+                _a80, _a90, _a95, _a99 = 0, 0, 0, 0
         pid = r[0]
         last_size = r[1]
 
@@ -208,21 +222,45 @@ def write_accepted(results, count_proteins):
 
         #Acceptance by min accuracy
         if r[3] >= 0.8:
-            n80 += 1
+            if by_protein:
+                _n80 = 1
+            else:
+                n80 += 1
             if r[2]:
-                a80 += 1
+                if by_protein:
+                    _a80 = 1
+                else:
+                    a80 += 1
         if r[3] >= 0.9:
-            n90 += 1
+            if by_protein:
+                _n90 = 1
+            else:
+                n90 += 1
             if r[2]:
-                a90 += 1
+                if by_protein:
+                    _a90 = 1
+                else:
+                    a90 += 1
         if r[3] >= 0.95:
-            n95 += 1
+            if by_protein:
+                _n95 =1
+            else:
+                n95 += 1
             if r[2]:
-                a95 += 1
+                if by_protein:
+                    _a95 = 1
+                else:
+                    a95 += 1
         if r[3] >= 0.99:
-            n99 += 1
+            if by_protein:
+                _n99 = 1
+            else:
+                n99 += 1
             if r[2]:
-                a99 += 1
+                if by_protein:
+                    _a99 = 1
+                else:
+                    a99 += 1
 
         #Count candidates
         cand_count += 1
@@ -230,6 +268,15 @@ def write_accepted(results, count_proteins):
     #Still need to process last pid
     l.append(hi_acc >= hi_rej)
     n_cand[r[1]].append(cand_count)
+    if by_protein:
+        n80 += _n80
+        n90 += _n90
+        n95 += _n95
+        n99 += _n99
+        a80 += _a80
+        a90 += _a90
+        a95 += _a95
+        a99 += _a99
 
     print('==========================================================')
     print('\n')
@@ -264,33 +311,38 @@ def write_accepted(results, count_proteins):
         'Highest accuray accepted: {}/{} ({:.2%})'.format(
             sum(l), len(l), sum(l)/len(l))
     )
+    if by_protein:
+        c = 'proteins'
+        nall = len(l)
+    else:
+        c = 'candidates'
     print(
-        '# of candidates at 80% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            n80, nall, n80/nall)
+        '# of {} at 80% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            c, n80, nall, n80/nall)
     )
     print(
         '# of acceptance at 80% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
             a80, n80, a80/n80)
     )
     print(
-        '# of candidates at 90% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            n90, nall, n90/nall)
+        '# of {} at 90% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            c, n90, nall, n90/nall)
     )
     print(
         '# of acceptance at 90% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
             a90, n90, a90/n90)
     )
     print(
-        '# of candidates at 95% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            n95, nall, n95/nall)
+        '# of {} at 95% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            c, n95, nall, n95/nall)
     )
     print(
         '# of acceptance at 95% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
             a95, n95, a95/n95)
     )
     print(
-        '# of candidates at 99% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            n99, nall, n99/nall)
+        '# of {} at 99% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
+            c, n99, nall, n99/nall)
     )
     print(
         '# of acceptance at 99% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
@@ -382,7 +434,7 @@ def computemany(data):
                        sensitivity, specificity))
     return output
 
-def main(tdir, pdir, v, ori, cpus, msize, cnt):
+def main(tdir, pdir, v, ori, cpus, msize, cnt, byprot, raw):
     logging.basicConfig(level=logging.INFO)
 
     global BG_CUTOFF
@@ -436,7 +488,11 @@ def main(tdir, pdir, v, ori, cpus, msize, cnt):
     pool.join()
     results = [item for r in res_objects for item in r.get()]
 
-    write_accepted(results, cnt)
+    if raw:
+        with open(raw, 'wb') as fh:
+            pickle.dump(results, fh)
+    else:
+        write_accepted(results, byprot, cnt)
 
 
 
@@ -462,7 +518,11 @@ if __name__ == "__main__":
                         help='Maximum size of protein to consider')
     parser.add_argument('-p', '--count_proteins', action='store_true',
                         help='Display count of proteins per size')
+    parser.add_argument('-b', '--by_protein', action='store_true',
+                        help='Produce acceptance results by protein')
+    parser.add_argument('-r', '--raw_results',
+                        help='Save raw results in this file and exit')
     args = parser.parse_args()
     main(args.true_motif_dir, args.pred_motif_dir,
          args.cutoff, args.orientation, args.cpus, args.maxsize,
-         args.count_proteins)
+         args.count_proteins, args.by_protein, args.raw_results)
