@@ -156,11 +156,17 @@ def makematrices(scores):
     for score in scores:
         pid, seg, cands, a_score = score
         k = getd(seg)
-        p_score = sum([learn[k][c][0] for c in cands]) / len(cands)
+        try:
+            p_score = sum([learn[k][c][0] for c in cands]) / len(cands)
+        except ZeroDivisionError:
+            p_score = 0
         s_score = p_score * a_score
         if s_score == 0:
             s_score = -1
-        o_score = sum([learn[k][c][1] for c in cands]) / len(cands)
+        try:
+            o_score = sum([learn[k][c][1] for c in cands]) / len(cands)
+        except ZeroDivisionError:
+            o_score = 0
         o = o_score >= 0.5
         for s, t in zip(strands, strands[k+1:]):
             if seg == aseq[s[1]+1: t[0]]:
