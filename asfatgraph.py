@@ -151,7 +151,7 @@ def makefatgraph(vertices):
 
     return v, e, iv
 
-def isparallel(f, s, bonds):
+def isparallel(f, s, bonds, t=1):
     '''
     True if the two strands f and s are parallel
     '''
@@ -170,9 +170,17 @@ def isparallel(f, s, bonds):
     if ftos and stof: # neither is empty
         return not ftos[0] == (stof[0][1], stof[0][0])
     # We only have one bond to determin orientation.
+    # Try extending strands by up to three residues on either side.
+    # If it is still not possible to determine orientation,
+    # assume parallel. 
     # We assume there would be two bonds if it is anti-parallel
-    # TODO: not sure if we can assume that. Check data.
-    return True
+    if t < 3:
+        newf = (f[0]-1, f[1]+1)
+        news = (s[0]-1, s[1]+1)
+        return isparallel(newf, news, bonds, t+1)
+    if t == 3:
+        return True
+    
 
 def getplacement(start, end):
     if start[0] < start[-1]:
@@ -264,11 +272,12 @@ def main(name, bif, bar, mot, save, debug):
         if don is not None and acc is not None:
             mat[don, acc] += 1
             newbonds.append(bond)
-    bonds = newbonds
+    sbonds = newbonds
 
     if debug:
         print(strands)
         print(bonds)
+        print(sbonds)
         print(mat)
 
     #TODO:
