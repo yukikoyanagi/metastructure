@@ -140,7 +140,7 @@ def makefatgraph(vertices):
     return set(v), set(e), set(iv)
 
 
-def compare(tmot, pmot, ori):
+def compare(tmot, pmot, ori=False):
     tpairs = {t[0] for t in tmot}
     ppairs = {p[0] for p in pmot}
     tlinks = {t for t in tmot}
@@ -161,8 +161,11 @@ def compare(tmot, pmot, ori):
 
     return TP, FP, TN, FN, len(c_pairs), len(c_links)
 
-
 def write_accepted(results, by_protein, count_proteins):
+    #vs = [.8, .85, .9, .95, 1]
+    vs = [.5, .6, .7, .8, .9, 1]
+    byvar_dic = {3: 'accuracy', 4: 'sensitivity', 5: 'specificity', 6: 'precision'}
+    byvar = 4 #Index of var to measure the result. 3=accuracy
     with open(MAT_FILE, 'rb') as fh:
         bg_mat = pickle.load(fh)
     dim = bg_mat.ndim
@@ -170,17 +173,12 @@ def write_accepted(results, by_protein, count_proteins):
     nall = len(results)
     accepted = [0 for i in range(n)]
     rejected = [0 for i in range(n)]
-    n80 = 0
-    a80 = 0
-    n90 = 0
-    a90 = 0
-    n95 = 0
-    a95 = 0
-    n99 = 0
-    a99 = 0
+    nc = [0 for _ in vs] #number of candidates
+    ac = [0 for _ in vs] #accepted candidates
     if by_protein:
-        _n80, _n90, _n95, _n99 = 0, 0, 0, 0
-        _a80, _a90, _a95, _a99 = 0, 0, 0, 0
+        np = [0 for _ in vs] #number of proteins
+        ap = [0 for _ in vs] #accepted proteins
+
     l = []
     hi_acc = 0
     hi_rej = 0
@@ -196,71 +194,36 @@ def write_accepted(results, by_protein, count_proteins):
             hi_rej = 0
             n_cand[last_size].append(cand_count)
             cand_count = 0
-            if by_protein:
-                n80 += _n80
-                n90 += _n90
-                n95 += _n95
-                n99 += _n99
-                a80 += _a80
-                a90 += _a90
-                a95 += _a95
-                a99 += _a99
-                _n80, _n90, _n95, _n99 = 0, 0, 0, 0
-                _a80, _a90, _a95, _a99 = 0, 0, 0, 0
+            if by_protein: #add np to nc
+                nc = [x+y for x,y in zip(nc, np)]
+                ac = [x+y for x,y in zip(ac, ap)]
+                np = [0 for _ in vs]
+                ap = [0 for _ in vs]
         pid = r[0]
         last_size = r[1]
 
         #Highest accuracy among accepted/rejected
         if r[2]:
             accepted[r[1]] += 1
-            if r[3] > hi_acc:
-                hi_acc = r[3]
+            if r[byvar] > hi_acc:
+                hi_acc = r[byvar]
         else:
             rejected[r[1]] += 1
-            if r[3] > hi_rej:
-                hi_rej = r[3]
+            if r[byvar] > hi_rej:
+                hi_rej = r[byvar]
 
-        #Acceptance by min accuracy
-        if r[3] >= 0.8:
-            if by_protein:
-                _n80 = 1
-            else:
-                n80 += 1
-            if r[2]:
+        #Acceptance by minimum accuracy
+        for i, v in enumerate(vs):
+            if r[byvar] >= v:
                 if by_protein:
-                    _a80 = 1
+                    np[i] = 1
                 else:
-                    a80 += 1
-        if r[3] >= 0.9:
-            if by_protein:
-                _n90 = 1
-            else:
-                n90 += 1
-            if r[2]:
-                if by_protein:
-                    _a90 = 1
-                else:
-                    a90 += 1
-        if r[3] >= 0.95:
-            if by_protein:
-                _n95 =1
-            else:
-                n95 += 1
-            if r[2]:
-                if by_protein:
-                    _a95 = 1
-                else:
-                    a95 += 1
-        if r[3] >= 0.99:
-            if by_protein:
-                _n99 = 1
-            else:
-                n99 += 1
-            if r[2]:
-                if by_protein:
-                    _a99 = 1
-                else:
-                    a99 += 1
+                    nc[i] += 1
+                if r[2]:
+                    if by_protein:
+                        ap[i] = 1
+                    else:
+                        ac[i] += 1
 
         #Count candidates
         cand_count += 1
@@ -269,14 +232,8 @@ def write_accepted(results, by_protein, count_proteins):
     l.append(hi_acc >= hi_rej)
     n_cand[r[1]].append(cand_count)
     if by_protein:
-        n80 += _n80
-        n90 += _n90
-        n95 += _n95
-        n99 += _n99
-        a80 += _a80
-        a90 += _a90
-        a95 += _a95
-        a99 += _a99
+        nc = [x+y for x,y in zip(nc, np)]
+        ac = [x+y for x,y in zip(ac, ap)]
 
     print('==========================================================')
     print('\n')
@@ -307,47 +264,28 @@ def write_accepted(results, by_protein, count_proteins):
             pcts[i] = 0
     print('Accepted %  :' + ''.join(['{:>8.1%}'.format(pcts[i]) for i in range(n)]))
     print('\nTotal accepted: {:.2%}'.format(sum(accepted) / (sum(accepted) + sum(rejected)) ))
+    by_var = byvar_dic[byvar]
     print(
-        'Highest accuray accepted: {}/{} ({:.2%})'.format(
-            sum(l), len(l), sum(l)/len(l))
+        'Highest {} accepted: {}/{} ({:.2%})'.format(
+            by_var, sum(l), len(l), sum(l)/len(l))
     )
     if by_protein:
-        c = 'proteins'
+        c = ' proteins '
         nall = len(l)
     else:
         c = 'candidates'
-    print(
-        '# of {} at 80% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            c, n80, nall, n80/nall)
-    )
-    print(
-        '# of acceptance at 80% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            a80, n80, a80/n80)
-    )
-    print(
-        '# of {} at 90% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            c, n90, nall, n90/nall)
-    )
-    print(
-        '# of acceptance at 90% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            a90, n90, a90/n90)
-    )
-    print(
-        '# of {} at 95% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            c, n95, nall, n95/nall)
-    )
-    print(
-        '# of acceptance at 95% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            a95, n95, a95/n95)
-    )
-    print(
-        '# of {} at 99% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            c, n99, nall, n99/nall)
-    )
-    print(
-        '# of acceptance at 99% accuracy level: {:>8}/{:>8} ({:>6.2%})'.format(
-            a99, n99, a99/n99)
-    )
+
+    for i, v in enumerate(vs):
+        print(
+            '# of {} at {:>4.0%} {} level: {:>8}/{:>8} ({:>6.2%})'.format(
+                c, v, by_var, nc[i], nall, nc[i]/nall
+            )
+        )
+        print(
+            '# of acceptance at {:>4.0%} {} level: {:>8}/{:>8} ({:>6.2%})'.format(
+                v, by_var, ac[i], nc[i], ac[i]/nc[i]
+            )
+        )
     print('\n')
 
 def mot2mat(mot, l):
@@ -415,26 +353,30 @@ def applyfilter(mot, bg_mat, size):
             score = 0
     return score >= BG_CUTOFF
 
-def computemany(data):
+def computemany(data, o=False):
     logger = logging.getLogger()
     output = []
     for pid, tmot, cmot in data:
-        TP, FP, TN, FN, CP, CL = compare(tmot, cmot, False)
+        TP, FP, TN, FN, CP, CL = compare(tmot, cmot, o)
         accuracy = (TP + TN) / (TP + TN + FP + FN)
         sensitivity = TP / (TP + FN)
         try:
             specificity = TN / (TN + FP)
-        except ZeroDivisionError as e:
+        except ZeroDivisionError as e: #this could happen in 2-strand
             specificity = 1.0
+        try:
+            precision = TP / (TP + FP)
+        except ZeroDivisionError as e:
+            precision = 0.0
         size = len(set(e for p, _ in tmot for e in p))
         with open(MAT_FILE, 'rb') as fh:
             bg_mat = pickle.load(fh)
         accepted = applyfilter(cmot, bg_mat, size)
         output.append((pid, size, accepted, accuracy,
-                       sensitivity, specificity))
+                       sensitivity, specificity, precision))
     return output
 
-def main(tdir, pdir, v, ori, cpus, msize, cnt, byprot, raw):
+def main(tdir, pdir, v, orientation, cpus, msize, cnt, byprot, raw):
     logging.basicConfig(level=logging.INFO)
 
     global BG_CUTOFF
@@ -482,7 +424,7 @@ def main(tdir, pdir, v, ori, cpus, msize, cnt, byprot, raw):
     
     pool = mp.Pool(processes=cpus)
     res_objects = [pool.apply_async(
-        computemany, args=(chunk,)
+        computemany, args=(chunk, orientation)
     ) for chunk in data]
     pool.close()
     pool.join()
@@ -511,7 +453,7 @@ if __name__ == "__main__":
                         help='Cutoff value for heatmap filter')
     parser.add_argument('-o', '--orientation', action='store_true',
                         help='Consider parallel/anti-parallel when '
-                        'computing accuracy.')
+                        'computing accuracy. Not working.')
     parser.add_argument('-c', '--cpus', type=int,
                         help='Number of cores to use in computation')
     parser.add_argument('-m', '--maxsize', type=int,

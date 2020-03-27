@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-PDB_DIR = '/home/au447708/QGM/metastr/data/pdb'
-SUM_DIR = '/home/au447708/QGM/metastr/data/summaries2017'
-HQ60_DIR = '/home/au447708/QGM/cdp/data/HQ60_17'
-OUTPUT_DIR = '/home/au447708/QGM/metastr/data/fatgraphs'
+SUM_DIR = '/home/au447708/QGM/metastr/data/summaries2020'
+HQ60_DIR = '/home/au447708/QGM/cdp/data/HQ60_20'
+
 #column numbers in summary* file
 RESNUM_COL = 1
 DSSP_COL = 3
