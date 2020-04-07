@@ -280,19 +280,17 @@ def main(name, bif, bar, mot, save, debug):
         print(sbonds)
         print(mat)
 
-    #TODO:
-    # If there is a multi-chain sheet and a single strand is separated
-    # from the others by one or more strand from another chain, the
-    # the corresponding row & column in the matrix is zero.
-    # Currently this is incorrectly flagged as barrel.
-    # In such case remove the corresponding row & column from the
-    # matrix and strands. 
-
     #Construct vertices
+    # isol is used to keep track of the # of isolated strands, which
+    # we assume to be the results of interchain bonds; the isolated
+    # strand is in fact bonded to another chain.
     vertices = []
+    isol = 0
     for row in mat:
         idx = getidx(mat, row)
         col = mat.T[idx]
+        if (numpy.count_nonzero(row) + numpy.count_nonzero(col) == 0):
+            isol += 1
         if (numpy.count_nonzero(row) == 1 and
             #numpy.count_nonzero(col) == 1 and
             #numpy.flatnonzero(row).item() == numpy.flatnonzero(col).item() and
@@ -306,7 +304,7 @@ def main(name, bif, bar, mot, save, debug):
                 exit()
 
     # If we don't have all strands in vertices here, we have a barrel
-    if len([s for v in vertices for s in v]) < len(strands):
+    if len([s for v in vertices for s in v]) < len(strands) - isol:
         if bar:
             print('{}: Barrel detected.'.format(name))
         exit()
