@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-PKL_DIR = '/home/au447708/QGM/metastr/data/fatgraphs'
+PKL_DIR = '/home/au447708/QGM/metastr/data/fatgraphs_20'
 
 import pathlib, argparse, pickle
 from fatgraph import fatgraph

@@ -39,4 +39,9 @@ def test_makefatgraph():
          {(2,8),(4,6),(5,7),(9,10)},
          {(1,4),(2,3),(5,10),(6,9),(7,8)})
 
-    
+def test_mot2mat2():
+    mot = {((0,1), True), ((1,2), False)}
+    pmat = np.array([[0,1,0],
+                     [0,0,0],
+                     [0,1,0]])
+    assert np.allclose(assess.mot2mat2(mot, 3), pmat)

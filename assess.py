@@ -148,13 +148,18 @@ def compare(tmot, pmot, ori=False):
     strands = range(max(s for p in tpairs for s in p) + 1)
     apairs = set(combinations(strands, 2))
     if ori:
-        TP = len(tlinks & plinks)
-        FP = len(plinks - tlinks)
+        l = len(strands)
+        tmat = mot2mat2(tmot, l)
+        pmat = mot2mat2(pmot, l)
+        TP = np.count_nonzero(tmat*pmat)
+        FP = np.count_nonzero(pmat-tmat>0)
+        TN = np.count_nonzero(pmat+tmat==0) - l
+        FN = np.count_nonzero(tmat-pmat>0)
     else:
         TP = len(tpairs & ppairs)
         FP = len(ppairs - tpairs)
-    TN = len((apairs - tpairs) & (apairs - ppairs))
-    FN = len(tpairs - ppairs)
+        TN = len((apairs - tpairs) & (apairs - ppairs))
+        FN = len(tpairs - ppairs)
 
     c_pairs = set(p for p in pmot if p[0] in tpairs)
     c_links = set(p for p in pmot if p in tmot and p[0] in tpairs)
@@ -298,6 +303,16 @@ def mot2mat(mot, l):
         o_mat[i,j] = link[1]
     return p_mat, o_mat
 
+def mot2mat2(mot, l):
+    "Make complete pairing matrix from motif"
+    pmat = np.zeros((l,l), dtype=int)
+    for link in mot:
+        i, j = link[0]
+        if not link[1]:
+            i, j = j, i
+        pmat[i,j] = 1
+    return pmat
+
 def apply_filter(mots, v, size):
 
     global BG_CUTOFF
@@ -357,7 +372,11 @@ def computemany(data, o=False):
     logger = logging.getLogger()
     output = []
     for pid, tmot, cmot in data:
-        TP, FP, TN, FN, CP, CL = compare(tmot, cmot, o)
+        try:
+            TP, FP, TN, FN, CP, CL = compare(tmot, cmot, o)
+        except IndexError as e:
+            print('IndexError in {}'.format(pid))
+            raise e
         accuracy = (TP + TN) / (TP + TN + FP + FN)
         sensitivity = TP / (TP + FN)
         try:
@@ -453,7 +472,7 @@ if __name__ == "__main__":
                         help='Cutoff value for heatmap filter')
     parser.add_argument('-o', '--orientation', action='store_true',
                         help='Consider parallel/anti-parallel when '
-                        'computing accuracy. Not working.')
+                        'computing accuracy.')
     parser.add_argument('-c', '--cpus', type=int,
                         help='Number of cores to use in computation')
     parser.add_argument('-m', '--maxsize', type=int,
