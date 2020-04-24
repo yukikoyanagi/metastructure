@@ -74,15 +74,20 @@ def getidx(mat, row):
     '''
     return numpy.where(numpy.all(mat==row, axis=1))[0][0].item()
 
-def extract(strands, mat, row, bifurcation=False, barrel=False):
+def extract(strands, mat, ridx, bifurcation=False, barrel=False):
     '''
     Extract a vertex from strands. The first strand is given by the
     corresponding row in mat.
     '''
     vertex = []
-    idx = getidx(mat, row)
+    idx = ridx
+    #print('idx is {}'.format(idx))
     vertex.append(strands[idx])
-    nidx = numpy.flatnonzero(row).item()
+    try:
+        nidx = numpy.flatnonzero(mat[idx]).item()
+    except ValueError:
+        nidx = numpy.flatnonzero(mat.T[idx]).item()
+    #print('nidx is {}'.format(nidx))
     vertex.append(strands[nidx])
     nrow = mat[nidx]
     crow = numpy.copy(nrow)
@@ -98,20 +103,21 @@ def extract(strands, mat, row, bifurcation=False, barrel=False):
                 raise ValueError('Bifurcation detected.')
             exit()
         try:
-            id = numpy.flatnonzero(crow).item()
+            idx = numpy.flatnonzero(crow).item()
         except ValueError:
-            id = numpy.flatnonzero(ccol).item()
-        if strands[id] in vertex:
+            idx = numpy.flatnonzero(ccol).item()
+        if strands[idx] in vertex:
             # we have a barrel
             if barrel:
                 raise ValueError('Beta-barrel detected.')
             exit()
-        vertex.append(strands[id])
-        crow = numpy.copy(mat[id])
+        vertex.append(strands[idx])
+        crow = numpy.copy(mat[idx])
         crow[nidx] = 0
-        ccol = numpy.copy(mat.T[id])
+        ccol = numpy.copy(mat.T[idx])
         ccol[nidx] = 0
-        nidx = id
+        nidx = idx
+        #print('nidx is {}'.format(nidx))
     return vertex
 
 def makefatgraph(vertices):
@@ -286,19 +292,23 @@ def main(name, bif, bar, mot, save, debug):
     # strand is in fact bonded to another chain.
     vertices = []
     isol = 0
-    for row in mat:
-        idx = getidx(mat, row)
+    for idx in range(len(mat)):
+        row = mat[idx]
         col = mat.T[idx]
         if (numpy.count_nonzero(row) + numpy.count_nonzero(col) == 0):
             isol += 1
-        if (numpy.count_nonzero(row) == 1 and
-            #numpy.count_nonzero(col) == 1 and
-            #numpy.flatnonzero(row).item() == numpy.flatnonzero(col).item() and
-            strands[idx] not in [s for v in vertices for s in v]):
-            # row has single nonzero entry and the corresponding
-            # strand is not already in vertices
+        if ((numpy.count_nonzero(row) + numpy.count_nonzero(col) == 1) or
+            # row and col have only one nonzero entry together
+            (numpy.count_nonzero(row) ==1 and
+             numpy.count_nonzero(col) ==1 and
+             numpy.flatnonzero(row)[0] == numpy.flatnonzero(col)[0])
+            # row and col have one nonzero entry each, but they are
+            # for the same strand
+        ):
+            if strands[idx] in [s for v in vertices for s in v]:
+                continue
             try:
-                vertices.append(extract(strands, mat, row, bif, bar))
+                vertices.append(extract(strands, mat, idx, bif, bar))
             except ValueError as e:
                 print('{}: {}'.format(name, e))
                 exit()
