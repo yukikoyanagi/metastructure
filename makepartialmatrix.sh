@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-#SBATCH --account austmathjea_slim
-#SBATCH --nodes=10
+#SBATCH --account sdumathjea_slim
+#SBATCH --nodes=12
 #SBATCH --ntasks-per-node=1
-#SBATCH --time 4:00:00            # max time (HH:MM:SS)
+#SBATCH --time 12:00:00            # max time (HH:MM:SS)
 #SBATCH --mail-type=END,FAIL
 #
 # Author: Yuki Koyanagi
@@ -12,8 +12,10 @@
 
 SUFFIX=v2
 GAP=-4
-SUBMAT=blosum62plus
+SUBMAT=blosum62plus2
 LS=Strict
+MATCH=4
+MISMATCH=-4
 
 echo Running on "$(hostname)"
 echo Running job: "$SLURM_JOB_NAME"
@@ -29,16 +31,18 @@ start=$(date +%s)
 
 echo Mofify python program
 sed -i -E "s/GAP_SCORE = -?[[:digit:]]+/GAP_SCORE = ${GAP}/" makepartialmatrix.py
+sed -i -E "s/MATCH = [[:digit:]]+/MATCH = ${MATCH}/" makepartialmatrix.py
+sed -i -E "s/MISMATCH = -?[[:digit:]]+/MISMATCH = ${MISMATCH}/" makepartialmatrix.py 
 sed -i -E "s/mat = smat\.[[:alnum:]]+/mat = smat\.${SUBMAT}/" makepartialmatrix.py
 sed -i -E "s/(Local|Strict)/${LS}/g" makepartialmatrix.py
 
 echo Starting Python program
 DATADIR=/work/austmathjea/metastr
-WORKDIR=/work/austmathjea/metastr/set3
+WORKDIR=/work/austmathjea/metastr/set9
 OUTDIR=${WORKDIR}/output_${SUFFIX}
 mkdir ${OUTDIR}
-srun python makepartialmatrix.py ${WORKDIR}/test.lst \
-     ${DATADIR}/summaries2017 ${WORKDIR}/gammasegs.txt \
+srun python makepartialmatrix.py ${WORKDIR}/validation_v2.lst \
+     ${DATADIR}/summaries2020 ${WORKDIR}/gammasegs_v2.txt \
      -o ${OUTDIR} -s -u5
 
 echo Done pairing

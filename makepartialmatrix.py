@@ -11,6 +11,9 @@ GAP_SCORE = -4
 N_ALIGNED = 10 #choose all matches
 MAX_ORDER = 1 # Consider up to n'th score for each strand pair
 
+MATCH = 4
+MISMATCH = -4
+
 import argparse, pathlib, re, os, pickle, logging
 import multiprocessing as mp
 import numpy as np
@@ -185,7 +188,7 @@ def align(seg, candidates, pid):
     logger.debug('{}: Aligning {}'.format(start, seg))
     ah = alignmenthelper.AlignmentHelper()
     smat = substmatrices.SubstitutionMatrices()
-    mat = smat.blosum62plus
+    mat = smat.blosum62plus2(match=MATCH, mismatch=MISMATCH)
     maxscore = ah.alignStrict(
         seg.replace('!', '*'), seg.replace('!', '*'),
         substMatrix=mat, gapScore=GAP_SCORE, btrace=False
