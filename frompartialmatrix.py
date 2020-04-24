@@ -368,21 +368,37 @@ def main(partial, n, allow, save, dbg):
         logger.debug('Partial matrix:')
         logger.debug(part_mat)
         motifs = []
+        part = 0
         for pmat, omat in completions2(part_mat, o_mat, allow):
             motifs.append(tomotif(pmat, omat))
-            if len(motifs)%500==0:
-                logger.debug('{}: Found {}'.format(datetime.now(),len(motifs)))
-        end = datetime.now()
-        d = end - start
-        logger.info('{}: Finished {} in {} seconds'.format(
-            end, pid, d.seconds))
+            if len(motifs)%5000==0:
+                logger.debug('{}: Found {}'.format(
+                    datetime.now(), part*10000 + len(motifs)))
+            if len(motifs)==100000:
+                if save:
+                    sd = pathlib.Path(save)
+                    part += 1
+                    of = sd / '{}_{}.pkl'.format(pid, part)
+                    with open(of, 'wb') as fh:
+                        pickle.dump(motifs, fh)
+                else:
+                    print(motifs)
+                motifs = []
         if save:
             sd = pathlib.Path(save)
-            of = sd / '{}.pkl'.format(pid)
+            if part:
+                of = sd / '{}_{}.pkl'.format(pid, part + 1)
+            else:
+                of = sd / '{}.pkl'.format(pid)
             with open(of, 'wb') as fh:
                 pickle.dump(motifs, fh)
         else:
             print(motifs)
+            
+        end = datetime.now()
+        d = end - start
+        logger.info('{}: Finished {} in {} seconds'.format(
+            end, pid, d.seconds))
 
 
 if __name__ == '__main__':
