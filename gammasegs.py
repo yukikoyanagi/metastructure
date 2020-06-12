@@ -174,7 +174,7 @@ def main(pid, sd, bd, skip, ar, debug):
                 else:
                     lst.append(s)
             seg = ''.join(lst)
-        print(seg, 'Paired:{}'.format(b), 'Parallel:{}'.format(parallel))
+        print('0', seg, 'Paired:{}'.format(b), 'Parallel:{}'.format(parallel))
 
 
 if __name__ == '__main__':

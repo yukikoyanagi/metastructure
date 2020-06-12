@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 SUM_DIR = '/home/au447708/QGM/metastr/data/summaries2020'
+#SUM_DIR = '/home/au447708/QGM/metastr/data/summaries_cov2'
 HQ60_DIR = '/home/au447708/QGM/cdp/data/HQ60_20'
+#HQ60_DIR = '/home/au447708/QGM/metastr/data/HQ60_cov2'
 
 #column numbers in summary* file
 RESNUM_COL = 1
@@ -246,7 +248,7 @@ def getmotif2(vertices):
         motif.add((pair, parallel))
     return motif
 
-def main(name, bif, bar, mot, save, debug):
+def main(name, bif, bar, mot, std, save, debug):
     try:
         seq = getseq(name)
     except FileNotFoundError:
@@ -261,6 +263,10 @@ def main(name, bif, bar, mot, save, debug):
     strands = []
     for m in re.finditer(r'S+', seq):
         strands.append((m.start()+1, m.end()))
+
+    if std:
+        print('{}:{}'.format(name, len(strands)))
+        exit()
 
     #Construct nxn matrix, where n=len(strands). (i,j)-entry shows
     #the number of bonds from i'th strand to j'th strand.
@@ -395,10 +401,12 @@ if __name__ == "__main__":
                         help='Print pid if there is a beta barrel.')
     parser.add_argument('-m', '--motif', action='store_true',
                         help='Print metastructure motif.')
+    parser.add_argument('-n', '--strands', action='store_true',
+                        help='Print number of strands.')
     parser.add_argument('-s', '--save',
                         help='Save results as pkl file in the '
                         'specified directory.')
     parser.add_argument('-d', '--debug', action='store_true')
     args = parser.parse_args()
-    main(args.name, args.bifurcation, args.barrel, args.motif,
+    main(args.name, args.bifurcation, args.barrel, args.motif, args.strands,
          args.save, args.debug)
