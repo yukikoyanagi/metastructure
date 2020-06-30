@@ -42,7 +42,7 @@ WORKDIR=/work/austmathjea/metastr/set9
 OUTDIR=${WORKDIR}/output_${SUFFIX}
 mkdir ${OUTDIR}
 srun python makepartialmatrix.py ${WORKDIR}/validation_v2.lst \
-     ${DATADIR}/summaries2020 ${WORKDIR}/gammasegs_v2.txt \
+     ${WORKDIR}/ss ${WORKDIR}/gammasegs_v2.txt \
      -o ${OUTDIR} -s -u5
 
 echo Done pairing

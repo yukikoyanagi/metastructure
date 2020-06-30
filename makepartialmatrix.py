@@ -29,63 +29,6 @@ learn = []
 sumdir = pathlib.Path('.')
 cpus = None
 
-def readrawseq(fname, col):
-    '''
-    Read col'th column of file fname as a list. 
-    '''
-    seq = []
-    with open(fname) as fh:
-        for line in fh:
-            cols = line.split()
-            n = int(cols[RESNUM_COL])
-            c = cols[col]
-            if n-1 == len(seq):
-                seq.append(c)
-            elif n-1 > len(seq):
-                seq.extend(['!']*(n-1-len(seq)))
-                seq.append(c)
-            else:
-                seq[n-1] = c
-    return seq
-
-def resseq(fname):
-    '''
-    Get sequence of residues from summary* file. Residue chars are
-    ordered by DSSP residue numbering and may contain !. 
-    '''
-    return ''.join(readrawseq(fname, RES_COL))
-
-def dsspseq(fname):
-    '''
-    Get sequence of 3-class DSSP from summary* file.
-    DSSP chars are ordered by DSSP residue numbering. 
-    In addition to H, S, C, the resulting sequence may contain 
-    ! for chain break, and/or previous chains (chains B, C, etc. 
-    may start at residue number other than 1).
-    '''
-    seq = readrawseq(fname, DSSP_COL)
-
-    # We need the start residue number
-    with open(fname) as fh:
-        line = fh.readline()
-    cols = line.split()
-    start = int(cols[RESNUM_COL]) - 1
-
-    # Single ! sandwiched by two S's is also an S
-    for i in range(start, len(seq)):
-        if seq[i] == '!' and seq[i-1] == 'S' and seq[i+1] == 'S':
-            seq[i] = 'S'
-        # ! franked by two S's is also an S
-        try:
-            if seq[i] == '!' and (
-                    (seq[i-1] == 'S' and seq[i-2] != 'S') or
-                    (seq[i+1] == 'S' and seq[i+2] != 'S')):
-                seq[i] = 'S'
-        except IndexError:
-            continue
-
-    return ''.join(seq)
-
 def getd(seg):
     "Return number of sheets ('=' segment)in seg"
     return len([s for s in seg.split('=') if s]) - 1
@@ -149,9 +92,11 @@ def makematrices(scores):
     logger = logging.getLogger()
     logger.debug('Making matrices from:\n{}'.format(scores))
     pid = scores[0][0]
-    sf = sumdir / 'summary{}.txt'.format(pid.upper()) #sumdir is global
-    dseq = dsspseq(sf)
-    rseq = resseq(sf)
+    sf = sumdir / '{}_ss'.format(pid.upper()) #sumdir is global
+    with open(sf) as fh:
+        lines = fh.readlines()
+    dseq = lines[2].strip().replace('E', 'S')
+    rseq = lines[1].strip()
     aseq = togammaseq(rseq, dseq)
     strands = getstrands(dseq)
     s_mat = np.zeros((len(strands), len(strands)))
@@ -226,8 +171,11 @@ def assign(pids, tid, tcount, sd):
     sd = pathlib.Path(sd)
     ps = []
     for pid in pids:
-        fn = sd / 'summary{}.txt'.format(pid.upper())
-        dseq = dsspseq(fn)
+        fn = sd / '{}_ss'.format(pid.upper())
+        with open(fn) as fh:
+            lines = fh.readlines()
+        dseq = lines[2].strip().replace('E', 'S')
+
         n = 0
         for k, g in groupby(dseq):
             if k == 'S':
@@ -256,9 +204,11 @@ def make(pids, sd, lf, of, up):
     segs = []
     for pid in pids:
         logger.debug('Loading {}....'.format(pid))
-        sf = sumdir / 'summary{}.txt'.format(pid.upper())
-        dseq = dsspseq(sf)
-        rseq = resseq(sf)
+        sf = sumdir / '{}_ss'.format(pid.upper())
+        with open(sf) as fh:
+            lines = fh.readlines()
+        dseq = lines[2].strip().replace('E', 'S')
+        rseq = lines[1].strip()
         logger.debug(dseq)
         logger.debug(rseq)
 
@@ -336,14 +286,14 @@ if __name__=='__main__':
                         'including chain ID. Or a file '
                         'containing list of protein id\'s.')
     parser.add_argument('seqdir',
-                        help='Directory containing summary* files.')
+                        help='Directory containing _ss files.')
     parser.add_argument('learningf',
                         help='File with alpha/gamma segments.')
     parser.add_argument('-o', '--output',
                         help='Output directory.')
     parser.add_argument('-s', '--slurm', action='store_true',
                         help='Run this on slurm.')
-    parser.add_argument('-u', '--upto', type=int,
+    parser.add_argument('-u', '--upto', type=int, default=1,
                         help='Construct pairing matrix up to u\'th '
                         'diagonal.')
     parser.add_argument('-p', '--processes', type=int,

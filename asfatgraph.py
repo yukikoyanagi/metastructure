@@ -248,7 +248,32 @@ def getmotif2(vertices):
         motif.add((pair, parallel))
     return motif
 
-def main(name, bif, bar, mot, std, save, debug):
+def makepmat(strands, vertices):
+    "Return pairing matrix with parallel shown as 1 in upper-triangular"
+    "part and a-p as 1 in lower triangular part."
+    # makepmat([(10,12),(20,22),(30,32)], [[(10,12),(32,30),(22,20)]])
+    # ..> [[0 0 0], [0 0 1], [1 0 0]]
+
+    def getidx(strands, x):
+        try:
+            i = strands.index(x)
+        except ValueError:
+            i = strands.index((x[1], x[0]))
+        return i
+
+    n = len(strands)
+    pmat = numpy.zeros((n,n), dtype=int)
+    for vertex in vertices:
+        for s, t in zip(vertex, vertex[1:]):
+            i = getidx(strands, s)
+            j = getidx(strands, t)
+            if not ((s[0] < s[1]) == (t[0] < t[1])):
+                i, j = j, i
+            pmat[i,j] = 1
+    return pmat
+
+
+def main(name, bif, bar, iso, mot, std, mtx, save, debug):
     try:
         seq = getseq(name)
     except FileNotFoundError:
@@ -319,6 +344,11 @@ def main(name, bif, bar, mot, std, save, debug):
                 print('{}: {}'.format(name, e))
                 exit()
 
+    if iso:
+        if isol:
+            print(name)
+        exit()
+
     # If we don't have all strands in vertices here, we have a barrel
     if len([s for v in vertices for s in v]) < len(strands) - isol:
         if bar:
@@ -370,6 +400,15 @@ def main(name, bif, bar, mot, std, save, debug):
     if debug:
         print(vertices)
 
+    if mtx:
+        if save:
+            with open('{}/{}.pmat.pkl'.format(save.rstrip('/'),
+                                              name), 'wb') as fh:
+                pickle.dump(makepmat(strands, vertices), fh)
+        else:
+            print(makepmat(strands, vertices))
+        exit()
+
     if save and mot:
         with open('{}/{}.pkl'.format(save.rstrip('/'), name), 'wb') as fh:
             pickle.dump(getmotif(vertices), fh)
@@ -399,14 +438,18 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--barrel',
                         action='store_true',
                         help='Print pid if there is a beta barrel.')
+    parser.add_argument('-i', '--isolated', action='store_true',
+                        help='Print pid if there is an isolated strand.')
     parser.add_argument('-m', '--motif', action='store_true',
                         help='Print metastructure motif.')
     parser.add_argument('-n', '--strands', action='store_true',
                         help='Print number of strands.')
+    parser.add_argument('-x', '--matrix', action='store_true',
+                        help='Print pairing matrix.')
     parser.add_argument('-s', '--save',
                         help='Save results as pkl file in the '
                         'specified directory.')
     parser.add_argument('-d', '--debug', action='store_true')
     args = parser.parse_args()
-    main(args.name, args.bifurcation, args.barrel, args.motif, args.strands,
-         args.save, args.debug)
+    main(args.name, args.bifurcation, args.barrel, args.isolated,
+         args.motif, args.strands, args.matrix, args.save, args.debug)
