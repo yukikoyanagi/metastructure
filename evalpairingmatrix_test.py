@@ -13,40 +13,10 @@ def test_compare():
                      [0,0,1,0],
                      [0,0,0,0],
                      [0,0,0,0]])
-    assert math.isclose(epm.compare(pmat, tmat), 5/6)
-    assert math.isclose(epm.compare(pmat, tmat, orientation=False), 1)
-    assert math.isclose(epm.compare(pmat, tmat, upto=2), 4/5)
-    assert math.isclose(epm.compare(pmat, tmat, only=1), 2/3)
-
-def test_makeonematrix():
-    pmat = np.array([[0,0,1,0],
-                     [0,0,1,0],
-                     [0,0,0,0],
-                     [0,0,0,0]])
-    omat = np.array([[0,0,1,0],
-                     [0,0,0,0],
-                     [0,0,0,0],
-                     [0,0,0,0]])
-    omat = omat.astype(bool)
-    res = np.array([[0,0,1,0],
-                    [0,0,0,0],
-                    [0,1,0,0],
-                    [0,0,0,0]])
-    assert np.allclose(epm.makeonematrix(pmat, omat), res)
-    pmat = np.array([[0,0,2,0],
-                     [0,0,1,0],
-                     [0,0,0,0],
-                     [0,0,0,0]])
-    omat = np.array([[0,0,0,0],
-                     [0,0,0,0],
-                     [0,0,0,0],
-                     [0,0,0,0]])
-    omat = omat.astype(bool)
-    res = np.array([[0,0,0,0],
-                    [0,0,0,0],
-                    [2,1,0,0],
-                    [0,0,0,0]])
-    assert np.allclose(epm.makeonematrix(pmat, omat), res)
+    assert math.isclose(epm.compare(pmat, tmat)[0], 1/2)
+    assert math.isclose(epm.compare(pmat, tmat)[1], 1/2)
+    assert math.isclose(epm.compare(pmat, tmat, upto=2)[0], 1/2)
+    assert math.isclose(epm.compare(pmat, tmat, only=1)[0], 0)
 
 def test_keepupto():
     mat = np.arange(16).reshape((4,4))
@@ -64,3 +34,24 @@ def test_keeponly():
                     [ 0,13, 0, 0]])
     assert np.allclose(epm.keeponly(mat, 2), res)
     
+def test_makepartialmatrix():
+    cmat = np.array([[ 0, 0,.5,.1, 0],
+                     [.8, 0, 0, 0, 0],
+                     [ 0,.6, 0,.4, 0],
+                     [ 0, 0, 0, 0,.7],
+                     [ 0, 0, 0, 0, 0]])
+    qmat = np.array([[ 0, 0, 0, 0, 0],
+                     [ 1, 0, 0, 0, 0],
+                     [ 0, 1, 0, 1, 0],
+                     [ 0, 0, 0, 0, 1],
+                     [ 0, 0, 0, 0, 0]])
+    assert np.allclose(epm.makepmat(cmat), qmat)
+    cmat = np.array([[ 0, 0,.2, 0],
+                     [ 0, 0, 0,.2],
+                     [.1, 0, 0, 0],
+                     [ 0,.1,.6, 0]])
+    qmat = np.array([[ 0, 0, 1, 0],
+                     [ 0, 0, 0, 1],
+                     [ 0, 0, 0, 0],
+                     [ 0, 0, 1, 0]])
+    assert np.allclose(epm.makepmat(cmat), qmat)

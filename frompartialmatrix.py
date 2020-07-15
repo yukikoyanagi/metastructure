@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
-CUTOFF = 0.2
+MAT_FILE = 'gbs_arr.pkl'
 
 import argparse, pickle, logging, pathlib
 from itertools import combinations, product, accumulate
 from operator import mul
 from datetime import datetime
 import numpy as np
+
+from fatgraph.fatgraph import Fatgraph
 
 class BarrelError(Exception):
     pass
@@ -33,16 +35,6 @@ def combinations_repeat(it, r, n):
                 subseq = tuple(it[k] for k in j)
                 res.append(subseq)
             yield tuple(res)
-
-def offdiagonal(s_mat, o_mat, n):
-    motif = set()
-    m = s_mat.shape[0]
-    for i, j in zip(range(m), range(n, m)):
-        if s_mat[i,j] < CUTOFF:
-            continue
-        else:
-            motif.add(((i,j), o_mat[i,j]))
-    return motif
 
 def isbifurcated(mat):
     "Determine if given *full* pairing matrix has bifurcations."
@@ -102,6 +94,80 @@ def findsheets(p_mat):
         if sheet[-1] in edges:
             edges.remove(sheet[-1])
     return sheets
+
+def makevertices(sheets, o_mat):
+    "Vertices from sheets and orientation matrix."
+    '''
+    [[0,1,2]], [[False, False, False],
+                [False, False, True],
+                [False, False, False]]
+    --> [[(0,1),(11,10),(21,20)]]
+    '''
+    omat = np.triu(o_mat, 1) + np.triu(o_mat, 1).T
+    vertices = []
+    for sheet in sheets:
+        oseq = []
+        for i, j in zip(sheet, sheet[1:]):
+            if omat[i,j]:
+                oseq.append(1)
+            else:
+                oseq.append(-1)
+            oseq = list(accumulate(oseq, mul))
+        vertex = []
+        i = sheet[0]
+        vertex.append((i*10, i*10+1))
+        for i, s in enumerate(sheet[1:]):
+            if oseq[i]>0:
+                vertex.append((s*10, s*10+1))
+            else:
+                vertex.append((s*10+1, s*10))
+        first = min(vertex)
+        if first[0] > first[1]:
+            vertex = [(s[1],s[0]) for s in vertex]
+        vertices.append(vertex)
+    return vertices
+
+def makefatgraph(vertices):
+    '''
+    Construct vertices, edges, & internal edges from given vertices.
+    '''
+    vdict = {}
+    for vertex in vertices:
+        #We want anti-clockwise ordering of half-edges on each vertex
+        l = [v[0] for v in vertex] + [v[1] for v in vertex][::-1]
+        r = len(vdict)
+        for i in range(r, r+len(l)):
+            vdict[l[i - r]] = i + 1
+
+    #Now we find edges
+    halfedges = sorted([i for vertex in vertices
+                        for v in vertex
+                        for i in v])
+    edges = [(i, j) for i, j in zip(halfedges, halfedges[1:])]
+    #edges = [(halfedges[i], halfedges[i+1])
+    #         for i in range(1, len(halfedges)-2, 2)]
+
+    #Translate vertices and edges according to vdict
+    v = []
+    p = 1
+    for vertex in vertices:
+        v.append(tuple(range(p, 2*len(vertex)+p)))
+        p += 2*len(vertex)
+
+    iv = []
+    iedges = [e for vertex in vertices for e in vertex]
+    for e in iedges:
+        iv.append((vdict[e[0]], vdict[e[1]]))
+
+    e = []
+    for d in edges:
+        edge = (vdict[d[0]], vdict[d[1]])
+        if edge[0] > edge[1]:
+            edge = edge[::-1]
+        if edge not in iv:
+            e.append(edge)
+
+    return set(v), set(e), set(iv)
 
 def hasbarrel(mat):
     "Determine if given *full* pairing matrix has barrels."
@@ -339,7 +405,41 @@ def reduce_mat(mat):
     l = len(mat)
     return np.tril(mat, max(l-5, 1))
 
-def main(partial, n, allow, save, dbg):
+def make_pmat(pmat, omat):
+    "Make single pairing matrix"
+    mat = np.zeros_like(pmat)
+    for i, j in np.ndindex(pmat.shape):
+        if i<j:
+            if omat[i,j]:
+                mat[i,j] = pmat[i,j]
+                mat[j,i] = 0
+            else:
+                mat[j,i] = pmat[i,j]
+                mat[i,j] = 0
+    return mat
+
+def repopulate(pmat, original, omat):
+    "Re-populate first diagonals in pmat with entries from original "
+    "and the rest according to genus-boundary filter."
+    with open(MAT_FILE, 'rb') as fh:
+        bg_mat = pickle.load(fh)
+    sheets = findsheets(pmat)
+    vertices = makevertices(sheets, omat)
+    v, e, iv = makefatgraph(vertices)
+    fg = Fatgraph(v, e)
+    g = fg.genus
+    b = len(fg.boundaries)
+    k = max(len(sheet) for sheet in sheets)
+    try:
+        score = bg_mat[g,b,k] / np.sum(bg_mat[:,:,k])
+    except IndexError:
+        score = 0
+    l = len(pmat)
+    n = min(5, max(l-5, 1))
+    rmat = np.triu(pmat*score, n+1) + np.tril(original, n)
+    return np.where(rmat>0, rmat, 0)
+
+def main(partial, allow, save, dbg):
     if dbg:
         logging.basicConfig(format='%(message)s', level=logging.DEBUG)
     else:
@@ -353,53 +453,33 @@ def main(partial, n, allow, save, dbg):
         s_mat, o_mat = pickle.load(fh)
     logger.debug(s_mat)
     logger.debug(o_mat)
-    if n:
-        motif = offdiagonal(s_mat, o_mat, n)
-        if save:
-            sd = pathlib.Path(save)
-            of = sd / '{}.pkl'.format(pid)
-            with open(of, 'wb') as fh:
-                pickle.dump(motif, fh)
-        else:
-            print(motif)
-    else:
-        part_mat = makepartialmatrix(s_mat)
-        part_mat = reduce_mat(part_mat)
-        logger.debug('Partial matrix:')
-        logger.debug(part_mat)
-        motifs = []
-        part = 0
-        for pmat, omat in completions2(part_mat, o_mat, allow):
-            motifs.append(tomotif(pmat, omat))
-            if len(motifs)%5000==0:
-                logger.debug('{}: Found {}'.format(
-                    datetime.now(), part*10000 + len(motifs)))
-            if len(motifs)==100000:
-                if save:
-                    sd = pathlib.Path(save)
-                    part += 1
-                    of = sd / '{}_{}.pkl'.format(pid, part)
-                    with open(of, 'wb') as fh:
-                        pickle.dump(motifs, fh)
-                else:
-                    print(motifs)
-                motifs = []
-        if save:
-            sd = pathlib.Path(save)
-            if part:
-                of = sd / '{}_{}.pkl'.format(pid, part + 1)
-            else:
-                of = sd / '{}.pkl'.format(pid)
-            with open(of, 'wb') as fh:
-                pickle.dump(motifs, fh)
-        else:
-            print(motifs)
-            
-        end = datetime.now()
-        d = end - start
-        logger.info('{}: Finished {} in {} seconds'.format(
-            end, pid, d.seconds))
 
+    part_mat = makepartialmatrix(s_mat)
+    part_mat = reduce_mat(part_mat)
+    logger.debug('Partial matrix:')
+    logger.debug(part_mat)
+    sum_mat = np.zeros_like(s_mat)
+    cnt = 0
+
+    for pmat, omat in completions2(part_mat, o_mat, allow):
+        pmat = repopulate(pmat, s_mat, omat)
+        mat = make_pmat(pmat, omat)
+        sum_mat += mat
+        cnt += 1
+    logger.debug('{} completions found.'.format(cnt))
+    mat = sum_mat / cnt
+    if save:
+        sd = pathlib.Path(save)
+        of = sd / '{}.pkl'.format(pid)
+        with open(of, 'wb') as fh:
+            pickle.dump(mat, fh)
+    else:
+        print(mat)
+
+    end = datetime.now()
+    d = end - start
+    logger.info('{}: Finished {} in {} seconds'.format(
+        end, pid, d.seconds))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -408,9 +488,6 @@ if __name__ == '__main__':
         'matrix and applying genus filter.')
     parser.add_argument('partial',
                         help='Partial motif pkl file.')
-    parser.add_argument('-o', '--only', type=int,
-                        help='Only consider o\'th diagonal, ignoring '
-                        'validity of the resulting motif.')
     parser.add_argument('-i', '--allow-isolated', action='store_true',
                         help='Allow isolated strand in the resulting '
                         'motifs.')
@@ -419,4 +496,4 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Print debug messages.')
     args = parser.parse_args()
-    main(args.partial, args.only, args.allow_isolated, args.save, args.debug)
+    main(args.partial, args.allow_isolated, args.save, args.debug)

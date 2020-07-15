@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
-import argparse, pathlib, pickle, math
+import argparse, pathlib, pickle, math, logging
 import numpy as np
+
+class BarrelError(Exception):
+    pass
 
 def tririse(mat, orientation=True):
     "Make matrix upper-triangular by folding along the diagonal."
@@ -25,6 +28,9 @@ def compare(candidate, target, orientation=True, only=None, upto=None):
     elif upto is not None:
         cmat = keepupto(candidate, upto)
         tmat = keepupto(target, upto)
+    else:
+        cmat = candidate
+        tmat = target
     TP = np.sum(np.logical_and(cmat, tmat))
     FP = np.sum(np.where(cmat-tmat>0, 1, 0))
     FN = np.sum(np.where(tmat-cmat>0, 1, 0))
@@ -52,17 +58,6 @@ def compare(candidate, target, orientation=True, only=None, upto=None):
     return np.sum(np.triu(res, 1))/m
 '''
 
-def makeonematrix(pmat, omat):
-    "Make a single pairing matrix from upper-triangular pairing "
-    "matrix and orientation matrix. Anti-parallel connections are in "
-    "the lower-triangular part. Negative entries are set to 0."
-    pmat = np.triu(pmat, 1)
-    pmat = np.where(pmat>0, pmat, 0)
-    para_mat = np.where(omat, pmat, 0)
-    anti_mat = np.where(np.logical_and(pmat, np.logical_not(omat)),
-                        pmat, 0).T
-    return para_mat + anti_mat
-
 def keepupto(mat, u):
     "Keep up to u'th and -u'th diagonals (inclusive) of mat."
     return mat - np.triu(mat, u+1) - np.tril(mat, -u-1)
@@ -71,23 +66,8 @@ def keeponly(mat, o):
     "Keep only u'th and -u'th diagonals of mat"
     return np.diag(np.diag(mat, o), o) + np.diag(np.diag(mat, -o), -o)
 
-def computeone(pf, tf, cutoff, only=None, upto=None):
+def computeone(cand_mat, targ_mat, only=None, upto=None):
     "Compute accuracy for a single candidate structure."
-    pf = pathlib.Path(pf)
-    with open(pf, 'rb') as fh:
-        cand_pmat, cand_omat = pickle.load(fh)
-    cand_mat = makeonematrix(cand_pmat, cand_omat)
-    cand_mat = np.where(cand_mat<=cutoff, 0, 1)
-
-    tf = pathlib.Path(tf)
-    with open(tf, 'rb') as fh:
-        mot = pickle.load(fh)
-    targ_mat = np.zeros_like(cand_mat)
-    for link in mot:
-        i,j = sorted(link[0])
-        if link[1][0] == link[1][1]:#'rr' or 'll'
-            i,j = j,i
-        targ_mat[i,j] = 1
     if upto is not None:
         cand_mat = keepupto(cand_mat, upto)
         targ_mat = keepupto(targ_mat, upto)
@@ -96,36 +76,129 @@ def computeone(pf, tf, cutoff, only=None, upto=None):
         targ_mat = keeponly(targ_mat, only)
     return compare(cand_mat, targ_mat, True, only, upto)
 
-def main(pm, tdir, cutoff, only=None, upto=None):
+def isbifurcated(mat):
+    "Determine if given pairing matrix has bifurcations."
+    wmat = mat + mat.T
+    for row in wmat:
+        if np.count_nonzero(row>0) > 2:
+            return True
+    return False
+
+def findsheetat(k, mat):
+    if not np.allclose(mat, mat.T):
+        raise ValueError('Not a symmetric matrix.')
+    sheet = [k]
+    row = mat[k]
+    if np.count_nonzero(row) > 1:
+        raise ValueError
+    elif np.count_nonzero(row) < 1:
+        return sheet
+    prevk = k
+    thisk = np.flatnonzero(row)[0]
+    thisrow = mat[thisk]
+    while np.count_nonzero(thisrow) != 1:
+        if thisk in sheet:
+            raise BarrelError
+        sheet.append(thisk)
+        i, j = np.flatnonzero(thisrow)
+        if i == prevk:
+            nextk = j
+        else:
+            nextk = i
+        prevk, thisk = thisk, nextk
+        thisrow = mat[thisk]
+    else:
+        if thisk in sheet:
+            raise BarrelError
+        sheet.append(thisk)
+    return sheet
+
+def hasbarrel(mat):
+    "Determine if given pairing matrix has barrels."
+    wmat = mat + mat.T
+    seen = []
+    w_mat = np.where(wmat>0, wmat, 0)
+    for i, row in enumerate(w_mat):
+        if i not in seen and np.count_nonzero(row) < 2:
+            try:
+                sheet = findsheetat(i, w_mat)
+            except BarrelError as e:
+                return True
+            seen.extend(sheet)
+    if len(seen) < len(w_mat):
+        return True
+    return False
+
+def makepmat(smat):
+    "Make pairing matrix (0 or 1) from score matrix"
+    wmat = np.copy(smat)
+    pmat = np.zeros_like(wmat, dtype=int)
+    if len(pmat) == 2:
+        if wmat[0,1] > wmat[1,0]:
+            pmat[0,1] = 1
+        else:
+            pmat[1,0] = 1
+        return pmat
+    else:
+        while wmat.max() > 0:
+            idx = np.unravel_index(np.argmax(wmat), wmat.shape)
+            r_idx = idx[::-1]
+            pmat[idx] = 1
+            if isbifurcated(pmat) or hasbarrel(pmat):
+                pmat[idx] = 0
+            wmat[idx] = 0
+            wmat[r_idx] = 0
+        return pmat
+
+def main(pm, tdir, only=None, upto=None, dbg=False):
+    if dbg:
+        logging.basicConfig(format='%(message)s', level=logging.DEBUG)
+    else:
+        logging.basicConfig(format='%(message)s', level=logging.INFO)
+    logger = logging.getLogger()
+
     if pathlib.Path(pm).is_dir():
         acs = []
         for pf in pathlib.Path(pm).glob('*.pkl'):
-            mf = pathlib.Path(tdir) / '{}.pkl'.format(pf.name.split('.')[0])
-            acs.append(computeone(pf, mf, cutoff, only, upto))
+            logger.debug('Processing {}...'.format(pf.name))
+            with open(pf, 'rb') as fh:
+                mat = pickle.load(fh)
+            pmat = makepmat(mat)
+            mf = pathlib.Path(tdir) / '{}.pmat.pkl'.format(pf.name.split('.')[0])
+            with open(mf, 'rb') as fh:
+                mmat = pickle.load(fh)
+            acs.append(computeone(pmat, mmat, only, upto))
         TPRs, PPVs = zip(*acs)
         print('Avg.TPR:{} Avg.PPV:{}'.format(
             sum(TPRs)/len(TPRs), sum(PPVs)/len(PPVs)))
     else:
         pf = pathlib.Path(pm)
-        mf = pathlib.Path(tdir) / '{}.pkl'.format(pf.name.split('.')[0])
-        TPR, PPV = computeone(pf, mf, cutoff, only, upto)
+        logger.debug('Processing {}...'.format(pf.name))
+        with open(pf, 'rb') as fh:
+            mat = pickle.load(fh)
+        logger.debug(mat)
+        pmat = makepmat(mat)
+        logger.debug(pmat)
+        mf = pathlib.Path(tdir) / '{}.pmat.pkl'.format(pf.name.split('.')[0])
+        with open(mf, 'rb') as fh:
+            mmat = pickle.load(fh)
+        logger.debug(mmat)
+        TPR, PPV = computeone(pmat, mmat, only, upto)
         print('TPR:{} PPV:{}'.format(TPR, PPV))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Evaluation of alignment algorithm. If '
-        'partial_matrix is a single file, returns reacall (TPR) and '
+        description='Evaluation of candidate pairing matrix. If '
+        'cand_matrix is a single file, returns reacall (TPR) and '
         'precision (PPV). If it is a directory, returns averages of '
         'recall and precision values.'
     )
-    parser.add_argument('partial_matrix',
-                        help='A pickle file containing partial '
+    parser.add_argument('cand_matrix',
+                        help='A pickle file containing candidate '
                         'matrix, or a directory with such pickle files.')
     parser.add_argument('true_motif_dir',
                         help='Directory containing pickle files of '
-                        'true motifs.')
-    parser.add_argument('--cutoff', '-c', type=float, default=0,
-                        help='Cutoff value for candidate pairing matrix.')
+                        'true pairing matrices.')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--only', '-o', type=int,
                        help="Only consider (upper and lower) o'th "
@@ -133,6 +206,8 @@ if __name__ == '__main__':
     group.add_argument('--upto', '-u', type=int,
                        help="Only consider up to and including "
                        "(upper and lower) u'th diagonal.")
+    parser.add_argument('--debug', '-d', action='store_true',
+                        help='Print debug messages.')
     args = parser.parse_args()
-    main(args.partial_matrix, args.true_motif_dir,
-         args.cutoff, args.only, args.upto)
+    main(args.cand_matrix, args.true_motif_dir,
+         args.only, args.upto, args.debug)
