@@ -25,7 +25,10 @@ def main(bp_file):
         i, j, c = pair
         if c == 'A':
             i, j = j, i
-        mat[i,j] = 1
+        if np.sum(mat[i,:] + mat[:,i] + mat[j,:] + mat[:,j]) > 1:
+            continue
+        else:
+            mat[i,j] = 1
 
     p = pathlib.Path(bp_file)
     outf = p.with_suffix('.pkl')

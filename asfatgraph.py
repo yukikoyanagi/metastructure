@@ -267,6 +267,8 @@ def makepmat(strands, vertices):
         for s, t in zip(vertex, vertex[1:]):
             i = getidx(strands, s)
             j = getidx(strands, t)
+            if i > j:
+                i, j = j, i
             if not ((s[0] < s[1]) == (t[0] < t[1])):
                 i, j = j, i
             pmat[i,j] = 1
