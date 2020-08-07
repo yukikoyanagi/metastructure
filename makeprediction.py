@@ -3,11 +3,16 @@
 
 import argparse, json, logging, pickle
 from itertools import permutations, product
+from collections import Counter
+from collections.abc import Iterable
 import numpy as np
 
 from fatgraph.fatgraph import FatgraphB
 
 MAT_FILE = 'gbs_arr_20.pkl'
+
+class AddLinkError(ValueError):
+    pass
 
 with open(MAT_FILE, 'rb') as fh:
     bg_mat = pickle.load(fh)
@@ -25,7 +30,15 @@ def partition(collection):
         # put `first` in its own subset 
         yield [ [ first ] ] + smaller
 
-def validorders(collection):
+def pairsapart(seq, pairs):
+    "True if any of the pairs are apart in the seq"
+    for pair in pairs:
+        i, j = pair
+        if abs(seq.index(i)-seq.index(j))>1:
+            return True
+    return False
+
+def validorders(collection, paired=[]):
     "Return all valid reorderings of elements in collection. "
     "Collection is a list of lists. Rules for valid orders are; "
     "-within each list, the first element is smaller than the last"
@@ -34,30 +47,176 @@ def validorders(collection):
     ls = []
     for c in cs:
         l = []
+        pairs = [p for p in paired if p[0] in c and p[1] in c]
         for p in permutations(c, len(c)):
+            if pairsapart(p, pairs):
+                continue
             if p[0] < p[-1]:
                 l.append(p)
         ls.append(l)
     return product(*ls)
 
-def allpmats(n):
+def findpidx(ps, ks):
+    "Return list of indices in ps where element from ks is found"
+    ids = []
+    for k in ks:
+        try:
+            i = ps.index(k)
+        except ValueError:
+            i = ps.index(k[::-1])
+        ids.append(i)
+
+    return ids
+
+def preset_ornt(ornts, ids, ps):
+    "Return true if ornts at ids match those in ps"
+    for k in range(len(ids)):
+        i = ids[k]
+        if ornts[i] != (ps[k][0]<ps[k][1]):
+            return False
+    return True
+
+def pairs2segs(pairs):
+    "Convert list of pairs to list og segments"
+    '''
+    [(0,1),(1,2),(3,4)] --> [[0,1,2],[3,4]]
+    '''
+    segs = []
+    for p in pairs:
+        i, j = p
+        matched = [s for s in segs if i in s or j in s]
+        if len(matched) == 0:
+            segs.append([min(p), max(p)])
+        elif len(matched) == 1:
+            s = matched[0]
+            if i == s[0]:
+                news = [j, i] + s[1:]
+            elif i == s[-1]:
+                news = s[:-1] + [i, j]
+            elif j == s[0]:
+                news = [i, j] + s[1:]
+            elif j == s[-1]:
+                news = s[:-1] + [j, i]
+            segs.remove(s)
+            segs.append(news)
+        elif len(matched) == 2:
+            s, t = matched
+            if set([s[0], t[0]]) == set([i,j]):
+                news = s[::-1] + t
+            elif set([s[0], t[-1]]) == set([i,j]):
+                news = s[::-1] + t[::-1]
+            elif set([s[-1], t[0]]) == set([i,j]):
+                news = s + t
+            elif set([s[-1], t[-1]]) == set([i,j]):
+                news = s + t[::-1]
+            segs.remove(s)
+            segs.remove(t)
+            segs.append(news)
+
+    for s in segs:
+        if s[0] > s[-1]:
+            s.reverse()
+    
+    return sorted(segs, key=min)
+
+def allpmats(n, paired=[]):
     "Yield all valid, complete pairing matrices of size n"
-    for p in partition(list(range(n))):
+    "paired is a list of tuples representing paired strands. "
+    "For a pair (i,j), if i<j the pairing is parallel, if i>j "
+    "the pairing is anti-parallel."
+    collection = list(range(n))
+    if paired:
+        segs = pairs2segs(paired)
+        for seg in segs:
+            for i in seg:
+                collection.remove(i)
+            collection.append(seg)
+
+    logging.debug('Collection: {}'.format(collection))
+
+    for p in partition(collection):
+        if paired:
+            #If paired was specified, p contains pairs as list
+            newp = []
+            for c in p:
+                newc = []
+                for x in c:
+                    if isinstance(x, Iterable):
+                        newc += [y for y in x]
+                    else:
+                        newc.append(x)
+                newp.append(newc)
+            p = newp
         if min([len(s) for s in p]) < 2:
             continue
-        for q in validorders(sorted(p)):
+        for q in validorders(sorted(p), paired):
             #q is a tuple of tuples representing strand pairings
             links = [(i,j) for r in q for i,j in zip(r, r[1:])]
-            for link_oris in product([True, False], repeat=len(links)):
+            p_idx = findpidx(links, paired)
+            for link_oris in product([True, False],
+                                     repeat=len(links)):
+                if not preset_ornt(link_oris, p_idx, paired):
+                    continue
                 mat = np.zeros((n, n))
                 for idx, par in zip(links, link_oris):
                     if par:
-                        mat[idx] = 1
+                        mat[min(idx), max(idx)] = 1
                     else:
-                        mat[idx[::-1]] = 1
+                        mat[max(idx), min(idx)] = 1
                 yield mat
 
-def main(pf, save, alpha, dbg):
+def addlink(sheets, link):
+    i, j = link
+    added = False
+    for sheet in sheets:
+        if i in sheet or j in sheet:
+            sheet.extend([i,j])
+            cnt = Counter(sheet).values()
+            if list(cnt).count(1) != 2 or list(cnt).count(3) > 0:
+                #either barrel (<2) or bifurcation (>2)
+                del sheet[-2:]
+                raise AddLinkError
+            added = True
+            break
+
+    if added:
+        #check sheets
+        if len(sheets) > 1:
+            cnt = Counter([x for s in sheets for x in set(s)])
+            i, c = cnt.most_common(1)[0]
+            if c > 1: #two of the sheets should be merged
+                a, b = [s for s in sheets if i in s]
+                sheets.remove(a)
+                sheets.remove(b)
+                sheets.append(a + b)
+    else:
+        #No sheet contains i nor j
+        sheets.append([i,j])
+    return sheets
+
+def select_pairs(mat, p):
+    "Select top p% entries from mat and retun as a list of tuples, "
+    "while avoiding bifurcation, barrel."
+    wmat = np.copy(mat)
+    k = wmat.shape[0]
+    n = int((k**2 - k) * p/100)
+    if n > k-1:
+        n = k-1
+    sheets = []
+    pairs = []
+    while n > len(pairs):
+        i,j = np.unravel_index(np.argmax(wmat), wmat.shape)
+        pairs.append((i,j))
+        try:
+            sheets = addlink(sheets, (i,j))
+        except AddLinkError:
+            pairs.remove((i,j))
+#        logging.debug(sheets)
+#        logging.debug(pairs)
+        wmat[i,j] = 0
+    return pairs
+
+def main(pf, save, alpha, top, dbg):
     if dbg:
         logging.basicConfig(format='%(message)s', level=logging.DEBUG)
     else:
@@ -72,7 +231,11 @@ def main(pf, save, alpha, dbg):
     hi_score = 0
     hi_mat = None
     beta = 1 - alpha
-    for cmat in allpmats(n):
+    paired = select_pairs(pmat, top)
+
+    logging.debug(paired)
+
+    for cmat in allpmats(n, paired):
         if beta > 0:
             fg = FatgraphB.from_pmat(cmat)
             g = fg.genus
@@ -106,7 +269,10 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--alpha', type=float, default=1.0,
                         help='Factor for betapro score. Beta is '
                         'computed as 1-alpha.')
+    parser.add_argument('-t', '--top', type=float, default=0,
+                        help='Use top t% of entries from the input '
+                        'pairing matrix.')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Print debug messages.')
     args = parser.parse_args()
-    main(args.pmat_file, args.save, args.alpha, args.debug)
+    main(args.pmat_file, args.save, args.alpha, args.top, args.debug)
