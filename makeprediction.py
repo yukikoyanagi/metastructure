@@ -269,8 +269,8 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--alpha', type=float, default=1.0,
                         help='Factor for betapro score. Beta is '
                         'computed as 1-alpha.')
-    parser.add_argument('-t', '--top', type=float, default=0,
-                        help='Use top t% of entries from the input '
+    parser.add_argument('-t', '--top', type=float, default=0.0,
+                        help='Use top t%% of entries from the input '
                         'pairing matrix.')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Print debug messages.')
