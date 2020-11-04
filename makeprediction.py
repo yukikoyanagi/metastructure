@@ -38,22 +38,49 @@ def pairsapart(seq, pairs):
             return True
     return False
 
-def validorders(collection, paired=[]):
+def permutations2(iterable, r=None):
+    "Return normal itertools.permutations, if iterable does not "
+    "contain list. If it does, keep the elements in list together."
+    '''
+    [0,1,2] --> 012 021 102 120 201 210
+    [0,[1,2]] --> 012 021 120 210
+    '''
+    flag = False
+    for i in iterable:
+        if isinstance(i, Iterable):
+            flag = True
+            break
+
+    if flag:
+        for p in permutations(iterable):
+            segs = [isinstance(x, Iterable) for x in p]
+            for seq in product([1, -1], repeat=sum(segs)):
+                out = []
+                for k, t in enumerate(segs):
+                    if t:
+                        i = seq[sum(segs[:k])]
+                        out.extend([x for x in p[k][::i]])
+                    else:
+                        out.append(p[k])
+                yield tuple(out)
+    else:
+        for p in permutations(iterable):
+            yield p
+
+def validorders(collection):
     "Return all valid reorderings of elements in collection. "
-    "Collection is a list of lists. Rules for valid orders are; "
+    "Collection is a list of lists (may contain segments as lists)."
+    " Rules for valid orders are; "
     "-within each list, the first element is smaller than the last"
     "-lists are ordered by the smallest element in each list"
-    cs = sorted([sorted(c) for c in collection])
     ls = []
-    for c in cs:
+    for c in collection:
         l = []
-        pairs = [p for p in paired if p[0] in c and p[1] in c]
-        for p in permutations(c, len(c)):
-            if pairsapart(p, pairs):
-                continue
+        for p in permutations2(c):
             if p[0] < p[-1]:
                 l.append(p)
         ls.append(l)
+    ls = sorted(ls, key=min)
     return product(*ls)
 
 def findpidx(ps, ks):
@@ -132,7 +159,7 @@ def allpmats(n, paired=[]):
                 collection.remove(i)
             collection.append(seg)
 
-    logging.debug('Collection: {}'.format(collection))
+    logging.debug('Sheets: {}'.format(collection))
 
     for p in partition(collection):
         if paired:
@@ -146,17 +173,28 @@ def allpmats(n, paired=[]):
                     else:
                         newc.append(x)
                 newp.append(newc)
-            p = newp
-        if min([len(s) for s in p]) < 2:
+        else:
+            newp = p
+        if min([len(s) for s in newp]) < 2:
             continue
-        for q in validorders(sorted(p), paired):
+        y = 0
+        for q in validorders(p):
+            y += 1
+            if y % 100 == 0:
+                logging.debug('Processing {} in {}'.format(y, p))
             #q is a tuple of tuples representing strand pairings
             links = [(i,j) for r in q for i,j in zip(r, r[1:])]
             p_idx = findpidx(links, paired)
-            for link_oris in product([True, False],
-                                     repeat=len(links)):
-                if not preset_ornt(link_oris, p_idx, paired):
-                    continue
+            for oris in product([True, False],
+                                     repeat=len(links)-len(paired)):
+                oris = list(oris)
+                link_oris = []
+                for k, link in enumerate(links):
+                    if k in p_idx:
+                        pair = paired[p_idx.index(k)]
+                        link_oris.append(pair[0]<pair[1])
+                    else:
+                        link_oris.append(oris.pop(0))
                 mat = np.zeros((n, n))
                 for idx, par in zip(links, link_oris):
                     if par:
@@ -166,6 +204,10 @@ def allpmats(n, paired=[]):
                 yield mat
 
 def addlink(sheets, link):
+    "Return sheets (list of lists, each sheet may contain multiple "
+    "occurrances of a strand) with the new link added."
+    "Gives AddLinkError if adding the link results in barrel or "
+    "bifurcation."
     i, j = link
     added = False
     for sheet in sheets:
@@ -183,12 +225,24 @@ def addlink(sheets, link):
         #check sheets
         if len(sheets) > 1:
             cnt = Counter([x for s in sheets for x in set(s)])
-            i, c = cnt.most_common(1)[0]
+            k, c = cnt.most_common(1)[0]
             if c > 1: #two of the sheets should be merged
-                a, b = [s for s in sheets if i in s]
-                sheets.remove(a)
-                sheets.remove(b)
-                sheets.append(a + b)
+                a, b = [s for s in sheets if k in s]
+                newsheet = a + b
+                #Check newsheet for barrel or bifurcation
+                cnt = Counter(newsheet).values()
+                if list(cnt).count(1) != 2 or list(cnt).count(3) > 0:
+                    if i in a and j in a:
+                        a.remove(i)
+                        a.remove(j)
+                    else:
+                        b.remove(i)
+                        b.remove(j)
+                    raise AddLinkError
+                else:
+                    sheets.remove(a)
+                    sheets.remove(b)
+                    sheets.append(newsheet)
     else:
         #No sheet contains i nor j
         sheets.append([i,j])
@@ -235,6 +289,7 @@ def main(pf, save, alpha, top, dbg):
 
     logging.debug(paired)
 
+    sums = {}
     for cmat in allpmats(n, paired):
         if beta > 0:
             fg = FatgraphB.from_pmat(cmat)
@@ -242,9 +297,17 @@ def main(pf, save, alpha, top, dbg):
             b = len(fg.boundaries)
             k = max(len(v) for v in fg.vertices)//2
             try:
-                topo_score = bg_mat[g,b,k] / np.sum(bg_mat[:,:,k])
-            except IndexError as e:
+                s = sums[k]
+            except KeyError:
+                s = np.sum(bg_mat[:,:,k])
+                sums[k] = s
+            if s == 0:
                 topo_score = 0
+            else:
+                try:
+                    topo_score = bg_mat[g,b,k] / s
+                except IndexError as e:
+                    topo_score = 0
         else:
             topo_score = 0    
         score = alpha * np.sum(pmat*cmat) + beta * topo_score

@@ -31,6 +31,15 @@ def test_validorders():
     col = [[0,1,2], [3,4]]
     expected = set([((0,1,2),(3,4)), ((0,2,1),(3,4)), ((1,0,2),(3,4))])
     assert set(mp.validorders(col)) == expected
+    col = [[0,[1,2]], [3,4]]
+    expected = set([((0,1,2),(3,4)), ((0,2,1),(3,4))])
+    assert set(mp.validorders(col)) == expected
+    col = [[0,1],[[2,3]]]
+    expected = set([((0,1),(2,3))])
+    assert set(mp.validorders(col)) == expected
+    col = [[[0,1],[2,3]]]
+    expected = set([((0,1,2,3),), ((1,0,2,3),), ((0,1,3,2),), ((1,0,3,2),)])
+    assert set(mp.validorders(col)) == expected
 
 def test_select_pairs():
     mat = np.array([[0.0, 1.8, 0.0, 2.2],
@@ -53,3 +62,14 @@ def test_pairs2segs():
     assert mp.pairs2segs(ps) == [[0,1,2],[3,4]]
     ps = [(0,1),(2,3),(4,5),(3,0)]
     assert mp.pairs2segs(ps) == [[1,0,3,2],[4,5]]
+
+def test_addlink():
+    sheets = [[0,1,2,3,2,1],]
+    link = (4,2)
+    with pytest.raises(mp.AddLinkError):
+        mp.addlink(sheets, link)
+    sheets = [[12, 11], [15, 16, 14, 15, 14, 13]]
+    link = (11,14)
+    with pytest.raises(mp.AddLinkError):
+        mp.addlink(sheets, link)
+
