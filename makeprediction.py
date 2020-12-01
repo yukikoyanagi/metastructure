@@ -277,7 +277,7 @@ def main(pf, save, alpha, top, dbg):
         logging.basicConfig(format='%(message)s', level=logging.INFO)
 
     with open(pf) as fh:
-        pmat = np.array(json.load(fh))
+        pmat = np.log(np.array(json.load(fh)))
 
     logging.debug(pmat)
 
