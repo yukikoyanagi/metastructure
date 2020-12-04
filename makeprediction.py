@@ -267,7 +267,7 @@ def select_pairs(mat, p):
             pairs.remove((i,j))
 #        logging.debug(sheets)
 #        logging.debug(pairs)
-        wmat[i,j] = 0
+        wmat[i,j] = -np.inf
     return pairs
 
 def main(pf, save, alpha, top, dbg):
@@ -277,7 +277,9 @@ def main(pf, save, alpha, top, dbg):
         logging.basicConfig(format='%(message)s', level=logging.INFO)
 
     with open(pf) as fh:
-        pmat = np.log(np.array(json.load(fh)))
+        with np.errstate(divide='ignore'):
+            #ignore warning about log(0) here and load as -inf
+            pmat = np.log(np.array(json.load(fh)))
 
     logging.debug(pmat)
 
@@ -288,6 +290,10 @@ def main(pf, save, alpha, top, dbg):
     paired = select_pairs(pmat, top)
 
     logging.debug(paired)
+
+    #change -inf to 0
+    pmat = np.where(pmat>-1000, pmat, 0)
+    logging.debug(pmat)
 
     sums = {}
     for cmat in allpmats(n, paired):
@@ -309,7 +315,7 @@ def main(pf, save, alpha, top, dbg):
                 except IndexError as e:
                     topo_score = 0
         else:
-            topo_score = 0    
+            topo_score = 0
         score = alpha * np.sum(pmat*cmat) + beta * topo_score
         if score > hi_score:
             hi_score = score
