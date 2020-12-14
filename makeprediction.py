@@ -284,7 +284,7 @@ def main(pf, save, alpha, top, dbg):
     logging.debug(pmat)
 
     n = pmat.shape[0]
-    hi_score = 0
+    hi_score = -9999
     hi_mat = None
     beta = 1 - alpha
     paired = select_pairs(pmat, top)
