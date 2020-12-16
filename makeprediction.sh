@@ -1,38 +1,34 @@
 #!/usr/bin/env bash
 #
-#SBATCH --account sdumathjea_slim
-#SBATCH --nodes 1                 # number of nodes
-#SBATCH --time 3:00:00            # max time (HH:MM:SS)
-#SBATCH --mail-type=FAIL,END
-#
+# Usage: makeprediction.sh {pred_no} {log_no} {lst_file}
 
-WORKDIR=/work/austmathjea/metastr/set13
+WORKDIR=../data/set13
 BP_DIR=${WORKDIR}/bp_mat
-OUTDIR=${WORKDIR}/prediction1
+OUTDIR=${WORKDIR}/prediction${1}
+LOGDIR=${WORKDIR}/log
+LOG=${LOGDIR}/mp.${1}.${2}.log
 
-echo Running on "$(hostname)"
-echo Running job: "$SLURM_JOB_NAME"
-echo Available nodes: "$SLURM_NODELIST"
-echo Slurm_submit_dir: "$SLURM_SUBMIT_DIR"
-echo Start time: "$(date)"
+mkdir -p ${OUTDIR}
+mkdir -p ${LOGDIR}
+
+echo "Start time: $(date)" > ${LOG}
 start=$(date +%s)
 
-# echo Clearing scratch folder
-# rm -f ${SCRATCH}/*
+echo "Preparing environment" >> ${LOG}
+sudo yum update -y
+sudo yum install -y parallel
+pip3 install --user numpy
+pip3 install --user permutation
+pip3 install --user ../../packages/fatgraph-1.0.2.tar.gz
+echo "Done. Time: $(date)" >> ${LOG}
 
-#echo Enable modules
-#module purge
-#module add python-intel/3.5.2
-
-mkdir ${OUTDIR}
-
-echo Starting Python program
-parallel python makeprediction.py ${BP_DIR}/{}.json \
-	 -s ${OUTDIR}/{}.json :::: ${WORKDIR}/validation_8.lst
+echo "Starting Python program" >> ${LOG}
+parallel python3 makeprediction.py ${BP_DIR}/{}.json \
+	 -s ${OUTDIR}/{}.json -a0.1 -t4 :::: ${WORKDIR}/${3}
 
 end=$(date +%s)
-echo End time: "$(date)"
+echo "End time: $(date)" >> ${LOG}
 dur=$(date -d "0 $end sec - $start sec" +%T)
-echo Duration: "$dur"
+echo "Duration: $dur" >> ${LOG}
 
-echo Done.
+exit
