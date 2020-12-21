@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Usage: makeprediction.sh {pred_no} {log_no} {lst_file}
+# Usage: makeprediction.sh {pred_no} {log_no} {lst_file} {top}
 
 WORKDIR=../data/set13
 BP_DIR=${WORKDIR}/bp_mat
@@ -24,7 +24,7 @@ echo "Done. Time: $(date)" >> ${LOG}
 
 echo "Starting Python program" >> ${LOG}
 parallel python3 makeprediction.py ${BP_DIR}/{}.json \
-	 -s ${OUTDIR}/{}.json -a0.1 -t4 :::: ${WORKDIR}/${3}
+	 -s ${OUTDIR}/{}.json -a0.1 -t${4} :::: ${WORKDIR}/${3}
 
 end=$(date +%s)
 echo "End time: $(date)" >> ${LOG}
