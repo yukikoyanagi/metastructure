@@ -5,6 +5,7 @@ import argparse, json, logging, pickle
 from itertools import permutations, product
 from collections import Counter
 from collections.abc import Iterable
+from datetime import datetime
 import numpy as np
 
 from fatgraph.fatgraph import FatgraphB
@@ -274,13 +275,17 @@ def select_pairs(mat, p):
         wmat[i,j] = -np.inf
     return pairs
 
-def main(pf, save, alpha, top, dbg):
-    if dbg:
+def main(pf, save, alpha, top, lf, dbg):
+    if lf:
+        logging.basicConfig(format='%(asctime)s - %(message)s', filename=lf, level=logging.INFO)
+    elif dbg:
         logging.basicConfig(format='%(message)s', level=logging.DEBUG)
     else:
         logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 
-    logging.info('Start processing {}'.format(pf))
+    pid = pf.split('/')[-1].split('.')[0]
+    starttime = datetime.now()
+    logging.info('Start processing {}'.format(pid))
 
     with open(pf) as fh:
         with np.errstate(divide='ignore'):
@@ -335,7 +340,9 @@ def main(pf, save, alpha, top, dbg):
     else:
         print(hi_mat)
 
-    logging.info('Finished processing {}'.format(pf))
+    endtime = datetime.now()
+    elapsed = endtime - starttime
+    logging.info('Finished processing {}. Elapsed time: {}'.format(pid, elapsed))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -347,9 +354,12 @@ if __name__ == '__main__':
                         help='Factor for betapro score. Beta is '
                         'computed as 1-alpha.')
     parser.add_argument('-t', '--top', type=float, default=0.0,
-                        help='Use top t%% of entries from the input '
-                        'pairing matrix.')
+                        help='If positive, use top t%% of entries '
+                        'from the input pairing matrix. If negative, '
+                        'leave t pairings unpaired.')
+    parser.add_argument('-l', '--log',
+                        help='Log file.')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Print debug messages.')
     args = parser.parse_args()
-    main(args.pmat_file, args.save, args.alpha, args.top, args.debug)
+    main(args.pmat_file, args.save, args.alpha, args.top, args.log, args.debug)

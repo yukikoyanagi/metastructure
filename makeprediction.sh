@@ -24,7 +24,7 @@ echo "Done. Time: $(date)" >> ${LOG}
 
 echo "Starting Python program" >> ${LOG}
 parallel -j ${5} python3 makeprediction.py ${BP_DIR}/{}.json \
-	 -s ${OUTDIR}/{}.json -a0.1 -t${4} :::: ${WORKDIR}/${3}
+	 -s ${OUTDIR}/{}.json -a0.1 -t${4} -l ${LOG} :::: ${WORKDIR}/${3}
 
 end=$(date +%s)
 echo "End time: $(date)" >> ${LOG}
