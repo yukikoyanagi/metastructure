@@ -250,12 +250,16 @@ def addlink(sheets, link):
 
 def select_pairs(mat, p):
     "Select top p% entries from mat and retun as a list of tuples, "
-    "while avoiding bifurcation, barrel."
+    "while avoiding bifurcation, barrel. If p<0, -p is the max. "
+    "number of potential pairings left undecided."
     wmat = np.copy(mat)
     k = wmat.shape[0]
-    n = int((k**2 - k) * p/100)
-    if n > k-1:
-        n = k-1
+    if p<0:
+        n = max(0, k-1+p)
+    else:
+        n = int((k**2 - k) * p/100)
+        if n > k-1:
+            n = k-1
     sheets = []
     pairs = []
     while n > len(pairs):
@@ -274,7 +278,9 @@ def main(pf, save, alpha, top, dbg):
     if dbg:
         logging.basicConfig(format='%(message)s', level=logging.DEBUG)
     else:
-        logging.basicConfig(format='%(message)s', level=logging.INFO)
+        logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+
+    logging.info('Start processing {}'.format(pf))
 
     with open(pf) as fh:
         with np.errstate(divide='ignore'):
@@ -328,6 +334,8 @@ def main(pf, save, alpha, top, dbg):
             json.dump(hi_mat.tolist(), fh)
     else:
         print(hi_mat)
+
+    logging.info('Finished processing {}'.format(pf))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

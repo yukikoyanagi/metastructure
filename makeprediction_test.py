@@ -54,6 +54,7 @@ def test_select_pairs():
                     [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     [0.0, 0.0, 0.0, 0.0, 0.3, 0.0]])
     assert mp.select_pairs(mat, 15) == [(0,1),(2,3),(1,2),(5,4)]
+    assert mp.select_pairs(mat, -3) == [(0,1),(2,3)]
 
 def test_pairs2segs():
     ps = [(0,1),(1,2),(3,4)]

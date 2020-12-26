@@ -5,21 +5,6 @@ import pytest
 import frompartialmatrix as fpm
 
 
-def test_offdiagonal():
-    smat = np.array([[0, 1, 1, 1, 0],
-                     [0, 0,.5, 0, 1],
-                     [0, 0, 0, 0,.5],
-                     [0, 0, 0, 0, 1],
-                     [0, 0, 0, 0, 0]])
-    omat = np.zeros_like(smat, dtype=bool)
-    omat[0,2] = True
-    fpm.CUTOFF = .5
-    assert fpm.offdiagonal(smat, omat, 1) == \
-        {((0,1),False), ((1,2),False), ((3,4),False)}
-    fpm.CUTOFF = .6
-    assert fpm.offdiagonal(smat, omat, 2) == {((0,2),True), }
-
-
 def test_findsheetat():
     smat = np.array([[0, 1, 0, 1, 0],
                      [1, 0, 0, 0, 0],

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Usage: makeprediction.sh {pred_no} {log_no} {lst_file} {top}
+# Usage: makeprediction.sh {pred_no} {log_no} {lst_file} {top} {#jobs}
 
 WORKDIR=../data/set13
 BP_DIR=${WORKDIR}/bp_mat
@@ -23,7 +23,7 @@ pip3 install --user ../../packages/fatgraph-1.0.2.tar.gz
 echo "Done. Time: $(date)" >> ${LOG}
 
 echo "Starting Python program" >> ${LOG}
-parallel python3 makeprediction.py ${BP_DIR}/{}.json \
+parallel -j ${5} python3 makeprediction.py ${BP_DIR}/{}.json \
 	 -s ${OUTDIR}/{}.json -a0.1 -t${4} :::: ${WORKDIR}/${3}
 
 end=$(date +%s)
